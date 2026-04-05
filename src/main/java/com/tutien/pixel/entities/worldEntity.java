@@ -12,10 +12,12 @@ public class worldEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private int id;
     private String tenMap;
+    private String code;
+    private String jsonMap;
     private int w;
     private int h;
-    @OneToMany(mappedBy = "map", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "id", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<portalEntity> portals = new ArrayList<>();
-    @OneToMany(mappedBy = "map", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "code", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<monsterEntity> monsters = new ArrayList<>();
 }
