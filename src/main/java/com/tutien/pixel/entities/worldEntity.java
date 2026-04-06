@@ -12,6 +12,7 @@ public class worldEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private int id;
     private String tenMap;
+    @Column(unique = true)
     private String code;
     private String jsonMap;
     private int w;
@@ -19,5 +20,8 @@ public class worldEntity {
     @OneToMany(mappedBy = "id", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<portalEntity> portals = new ArrayList<>();
     @OneToMany(mappedBy = "code", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<monsterEntity> monsters = new ArrayList<>();
+    private List<spawnMonsterEntity> monsters = new ArrayList<>();
+    @OneToMany(mappedBy = "code", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<npcEntity> npcs = new ArrayList<>();
+
 }

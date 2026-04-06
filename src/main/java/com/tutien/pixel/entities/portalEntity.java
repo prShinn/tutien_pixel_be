@@ -10,7 +10,7 @@ public class portalEntity {
     private int id;
     private String denMap;
     @Column(length = 100, unique = true)
-    private String idMap;
+    private String code;
     private int x;
     private int y;
     private int toX;

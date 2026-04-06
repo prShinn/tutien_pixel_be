@@ -3,18 +3,16 @@ package com.tutien.pixel.entities;
 import jakarta.persistence.*;
 
 @Entity
-@Table(name = "npc")
-public class npcEntity {
+@Table(name="spawn_monster")
+public class spawnMonsterEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private int id;
-    private String name;
     private int mapCode;
-    @Enumerated(EnumType.STRING)
-    private loaiNpc loaiNpc;
     private int x;
     private int y;
-    private String classCss;
-    private String dlg;
-
+    private int w;
+    private int h;
+    private int count;
+    private int monsterCode;
 }
