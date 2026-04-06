@@ -9,5 +9,7 @@ public enum linhCanEnum {
     QUANG,
     AM,
     PHONG,
-    LOI
+    LOI,
+    THOI_GIAN,
+    KHONG_KHONG
 }

@@ -24,10 +24,118 @@ public class monsterEntity {
     private int tyLeRoiTien;
     private int tyLeRoiDo;
     private String color;
-    @OneToMany(mappedBy = "code", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<vatPhamEntity> drops = new ArrayList<>();
     private String sfx_name;
-    @ManyToOne
-    @JoinColumn(name = "sfx_id")  // cột foreign key trên bảng user
-    private effectSkillEntity sfx;
+    private String sfxCode;
+
+    public int getId() {
+        return id;
+    }
+
+    public void setId(int id) {
+        this.id = id;
+    }
+
+    public String getCode() {
+        return code;
+    }
+
+    public void setCode(String code) {
+        this.code = code;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public int getLevel() {
+        return level;
+    }
+
+    public void setLevel(int level) {
+        this.level = level;
+    }
+
+    public int getHp() {
+        return hp;
+    }
+
+    public void setHp(int hp) {
+        this.hp = hp;
+    }
+
+    public int getAtk() {
+        return atk;
+    }
+
+    public void setAtk(int atk) {
+        this.atk = atk;
+    }
+
+    public int getDef() {
+        return def;
+    }
+
+    public void setDef(int def) {
+        this.def = def;
+    }
+
+    public int getSpeed() {
+        return speed;
+    }
+
+    public void setSpeed(int speed) {
+        this.speed = speed;
+    }
+
+    public int getMoneyDropTo() {
+        return moneyDropTo;
+    }
+
+    public void setMoneyDropTo(int moneyDropTo) {
+        this.moneyDropTo = moneyDropTo;
+    }
+
+    public int getMoneyDropFrom() {
+        return moneyDropFrom;
+    }
+
+    public void setMoneyDropFrom(int moneyDropFrom) {
+        this.moneyDropFrom = moneyDropFrom;
+    }
+
+    public int getTyLeRoiTien() {
+        return tyLeRoiTien;
+    }
+
+    public void setTyLeRoiTien(int tyLeRoiTien) {
+        this.tyLeRoiTien = tyLeRoiTien;
+    }
+
+    public int getTyLeRoiDo() {
+        return tyLeRoiDo;
+    }
+
+    public void setTyLeRoiDo(int tyLeRoiDo) {
+        this.tyLeRoiDo = tyLeRoiDo;
+    }
+
+    public String getColor() {
+        return color;
+    }
+
+    public void setColor(String color) {
+        this.color = color;
+    }
+
+    public String getSfx_name() {
+        return sfx_name;
+    }
+
+    public void setSfx_name(String sfx_name) {
+        this.sfx_name = sfx_name;
+    }
 }

@@ -6,6 +6,7 @@ public enum loaiTrangBi {
     LEG,
     HANDS,
     HAT,
+    BOOTS,
     WEAPON,
     RING,
     BELT,

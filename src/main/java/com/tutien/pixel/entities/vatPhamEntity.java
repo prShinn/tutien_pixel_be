@@ -20,4 +20,85 @@ public class vatPhamEntity {
     private int giaTriTuVi;
     @Enumerated(EnumType.STRING)
     private statsEmbed giaTriTang;
+
+
+    public int getId() {
+        return id;
+    }
+
+    public void setId(int id) {
+        this.id = id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getCode() {
+        return code;
+    }
+
+    public void setCode(String code) {
+        this.code = code;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public String getIcon() {
+        return icon;
+    }
+
+    public void setIcon(String icon) {
+        this.icon = icon;
+    }
+
+    public loaiTrangBi getType() {
+        return type;
+    }
+
+    public void setType(loaiTrangBi type) {
+        this.type = type;
+    }
+
+    public int getGiaBan() {
+        return giaBan;
+    }
+
+    public void setGiaBan(int giaBan) {
+        this.giaBan = giaBan;
+    }
+
+    public int getGiaMua() {
+        return giaMua;
+    }
+
+    public void setGiaMua(int giaMua) {
+        this.giaMua = giaMua;
+    }
+
+    public int getGiaTriTuVi() {
+        return giaTriTuVi;
+    }
+
+    public void setGiaTriTuVi(int giaTriTuVi) {
+        this.giaTriTuVi = giaTriTuVi;
+    }
+
+    public statsEmbed getGiaTriTang() {
+        return giaTriTang;
+    }
+
+    public void setGiaTriTang(statsEmbed giaTriTang) {
+        this.giaTriTang = giaTriTang;
+    }
 }
