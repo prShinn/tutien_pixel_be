@@ -28,6 +28,42 @@ public class playerEntity {
     private int px;
     private int py;
     private trangBiEmbed trangBi;
+    private int iventoryIndex;
+    private int attackCD;
+    private int heal_hp;
+    private int heal_mp;
+
+    public int getAttackCD() {
+        return attackCD;
+    }
+
+    public void setAttackCD(int attackCD) {
+        this.attackCD = attackCD;
+    }
+
+    public int getHeal_hp() {
+        return heal_hp;
+    }
+
+    public void setHeal_hp(int heal_hp) {
+        this.heal_hp = heal_hp;
+    }
+
+    public int getHeal_mp() {
+        return heal_mp;
+    }
+
+    public void setHeal_mp(int heal_mp) {
+        this.heal_mp = heal_mp;
+    }
+
+    public int getIventoryIndex() {
+        return iventoryIndex;
+    }
+
+    public void setIventoryIndex(int iventoryIndex) {
+        this.iventoryIndex = iventoryIndex;
+    }
 
     public int getId() {
         return id;

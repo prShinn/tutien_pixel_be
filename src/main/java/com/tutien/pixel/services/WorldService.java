@@ -3,8 +3,10 @@ package com.tutien.pixel.services;
 import com.tutien.pixel.entities.worldEntity;
 import com.tutien.pixel.repositories.WorldRepository;
 import com.tutien.pixel.repositories.iRepositories.IGenericService;
+import com.tutien.pixel.utils.maps.MapUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
 import java.util.Optional;
@@ -14,6 +16,10 @@ public class WorldService implements IGenericService<worldEntity, Integer> {
 
     @Autowired
     private WorldRepository worldRepository;
+    @Autowired
+    private MapUtils mapUtils;
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Override
     public List<worldEntity> findAll() {
@@ -26,23 +32,39 @@ public class WorldService implements IGenericService<worldEntity, Integer> {
     }
 
     @Override
+    public Optional<worldEntity> findByCode(String code) {
+        return worldRepository.findByCode(code);
+    }
+
+    @Override
     public worldEntity save(worldEntity entity) {
         // Đảm bảo quan hệ 2 chiều được thiết lập trước khi lưu
+        if(entity.getJsonMap()== null||entity.getJsonMap().isEmpty()) {
+            String mapData = objectMapper.writeValueAsString(mapUtils.build(entity.getW(), entity.getH()));
+            entity.setJsonMap(mapData);
+        }
         return worldRepository.save(entity);
     }
 
     @Override
     public worldEntity update(Integer id, worldEntity newDetails) {
-        return worldRepository.findById(id).map(world -> {
-            world.setTenMap(newDetails.getTenMap());
-            world.setCode(newDetails.getCode());
-            world.setJsonMap(newDetails.getJsonMap());
-            world.setW(newDetails.getW());
-            world.setH(newDetails.getH());
+        Optional<worldEntity> exists = worldRepository.findById(id);
+        if (exists.isPresent()) {
+            exists.get().setTenMap(newDetails.getTenMap());
+            exists.get().setCode(newDetails.getCode());
+            exists.get().setJsonMap(newDetails.getJsonMap());
+            exists.get().setW(newDetails.getW());
+            exists.get().setH(newDetails.getH());
+            if (newDetails.getJsonMap() == null || newDetails.getJsonMap().isEmpty()) {
+                String mapData = objectMapper.writeValueAsString(mapUtils.build(newDetails.getW(), newDetails.getH()));
+                exists.get().setJsonMap(mapData);
+            }
+            return worldRepository.save(exists.get());
 
-            return worldRepository.save(world);
-        }).orElseThrow(() -> new RuntimeException("Không tìm thấy Map với ID: " + id));
+        }
+        throw new RuntimeException("Không tìm thấy Map với ID: " + id);
     }
+
 
     @Override
     public void delete(Integer id) {

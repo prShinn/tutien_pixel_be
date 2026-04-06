@@ -26,6 +26,15 @@ public class monsterEntity {
     private String color;
     private String sfx_name;
     private String sfxCode;
+    private int spawnCD;
+
+    public String getSfxCode() {
+        return sfxCode;
+    }
+
+    public void setSfxCode(String sfxCode) {
+        this.sfxCode = sfxCode;
+    }
 
     public int getId() {
         return id;
