@@ -1,6 +1,9 @@
 package com.tutien.pixel.services;
 
+import com.tutien.pixel.entities.dtos.PortalDto;
+import com.tutien.pixel.entities.dtos.WorldDto;
 import com.tutien.pixel.entities.worldEntity;
+import com.tutien.pixel.repositories.PortalRepository;
 import com.tutien.pixel.repositories.WorldRepository;
 import com.tutien.pixel.repositories.iRepositories.IGenericService;
 import com.tutien.pixel.utils.maps.MapUtils;
@@ -17,6 +20,8 @@ public class WorldService implements IGenericService<worldEntity, Integer> {
     @Autowired
     private WorldRepository worldRepository;
     @Autowired
+    private PortalRepository portalRepo;
+    @Autowired
     private MapUtils mapUtils;
     @Autowired
     private ObjectMapper objectMapper;
@@ -32,8 +37,33 @@ public class WorldService implements IGenericService<worldEntity, Integer> {
     }
 
     @Override
-    public Optional<worldEntity> findByCode(String code) {
-        return worldRepository.findByCode(code);
+    public WorldDto findByCode(String code) {
+        worldEntity w = worldRepository.findByCode(code)
+                .orElseThrow(() -> new RuntimeException("World not found"));
+        int[][] map = objectMapper.readValue(w.getJsonMap(), int[][].class);
+        List<PortalDto> portalDtos = portalRepo.findAllByMapCode(code)
+                .stream()
+                .map(p -> new PortalDto(
+                        p.getId(),
+                        p.getDenMap(),
+                        p.getCode(),
+                        p.getX(),
+                        p.getY(),
+                        p.getToX(),
+                        p.getToY(),
+                        p.getMapCode()
+                ))
+                .toList();
+        return new WorldDto(
+                w.getId(),
+                w.getTenMap(),
+                w.getCode(),
+                map,
+                w.getW(),
+                w.getH(),
+                portalDtos
+        );
+
     }
 
     @Override

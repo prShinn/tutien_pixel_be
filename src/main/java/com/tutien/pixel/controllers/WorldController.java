@@ -1,5 +1,6 @@
 package com.tutien.pixel.controllers;
 
+import com.tutien.pixel.entities.dtos.WorldDto;
 import com.tutien.pixel.entities.worldEntity;
 import com.tutien.pixel.services.WorldService;
 import jakarta.websocket.server.PathParam;
@@ -29,11 +30,9 @@ public class WorldController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    @GetMapping("/get")
-    public ResponseEntity<worldEntity> getByCode(@RequestParam String code) {
-        return worldService.findByCode(code)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+    @GetMapping("/by-code")
+    public ResponseEntity<WorldDto> getByCode(@RequestParam String code) {
+        return ResponseEntity.ok(worldService.findByCode(code));
     }
 
     @PostMapping
