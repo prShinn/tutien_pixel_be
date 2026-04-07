@@ -1,4 +1,4 @@
-package com.tutien.pixel.entities;
+package com.tutien.pixel.entities.enums;
 
 public enum skillType {
     PHYS,

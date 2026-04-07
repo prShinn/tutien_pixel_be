@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/worlds")
@@ -31,8 +32,8 @@ public class WorldController {
     }
 
     @GetMapping("/by-code")
-    public ResponseEntity<WorldDto> getByCode(@RequestParam String code) {
-        return ResponseEntity.ok(worldService.findByCode(code));
+    public ResponseEntity<Optional<WorldDto>> getByCode(@RequestParam String code) throws Exception {
+        return ResponseEntity.ok(worldService.getWorld(code));
     }
 
     @PostMapping

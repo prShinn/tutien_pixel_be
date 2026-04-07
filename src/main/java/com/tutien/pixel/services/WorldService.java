@@ -37,10 +37,21 @@ public class WorldService implements IGenericService<worldEntity, Integer> {
     }
 
     @Override
-    public WorldDto findByCode(String code) {
-        worldEntity w = worldRepository.findByCode(code)
-                .orElseThrow(() -> new RuntimeException("World not found"));
-        int[][] map = objectMapper.readValue(w.getJsonMap(), int[][].class);
+    public Optional<worldEntity> findByCode(String code) {
+        return worldRepository.findByCode(code);
+    }
+
+    public Optional<WorldDto> getWorld(String code) throws Exception {
+
+        Optional<worldEntity> opt = worldRepository.findByCode(code);
+        if (opt.isEmpty()) return Optional.empty();
+
+        worldEntity w = opt.get();
+
+        // Convert String jsonMap -> int[][]
+        int[][] json = objectMapper.readValue(w.getJsonMap(), int[][].class);
+
+        // Lấy danh sách portal và map sang DTO
         List<PortalDto> portalDtos = portalRepo.findAllByMapCode(code)
                 .stream()
                 .map(p -> new PortalDto(
@@ -54,22 +65,25 @@ public class WorldService implements IGenericService<worldEntity, Integer> {
                         p.getMapCode()
                 ))
                 .toList();
-        return new WorldDto(
-                w.getId(),
-                w.getTenMap(),
-                w.getCode(),
-                map,
-                w.getW(),
-                w.getH(),
-                portalDtos
-        );
 
+        // Trả ra DTO dạng Optional
+        return Optional.of(
+                new WorldDto(
+                        w.getId(),
+                        w.getTenMap(),
+                        w.getCode(),
+                        json,
+                        w.getW(),
+                        w.getH(),
+                        portalDtos
+                )
+        );
     }
 
     @Override
     public worldEntity save(worldEntity entity) {
         // Đảm bảo quan hệ 2 chiều được thiết lập trước khi lưu
-        if(entity.getJsonMap()== null||entity.getJsonMap().isEmpty()) {
+        if (entity.getJsonMap() == null || entity.getJsonMap().isEmpty()) {
             String mapData = objectMapper.writeValueAsString(mapUtils.build(entity.getW(), entity.getH()));
             entity.setJsonMap(mapData);
         }

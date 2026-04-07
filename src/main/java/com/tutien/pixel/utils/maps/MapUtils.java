@@ -106,7 +106,7 @@ public class MapUtils {
         }
     }
 
-    private int randInt(int min, int max) {
+    public int randInt(int min, int max) {
         return rand.nextInt((max - min) + 1) + min;
     }
 }

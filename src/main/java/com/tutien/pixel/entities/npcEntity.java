@@ -1,5 +1,6 @@
 package com.tutien.pixel.entities;
 
+import com.tutien.pixel.entities.enums.loaiNpc;
 import jakarta.persistence.*;
 
 @Entity
@@ -50,11 +51,11 @@ public class npcEntity {
         this.mapCode = mapCode;
     }
 
-    public com.tutien.pixel.entities.loaiNpc getLoaiNpc() {
+    public loaiNpc getLoaiNpc() {
         return loaiNpc;
     }
 
-    public void setLoaiNpc(com.tutien.pixel.entities.loaiNpc loaiNpc) {
+    public void setLoaiNpc(loaiNpc loaiNpc) {
         this.loaiNpc = loaiNpc;
     }
 

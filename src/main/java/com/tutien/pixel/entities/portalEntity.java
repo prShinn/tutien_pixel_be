@@ -1,5 +1,6 @@
 package com.tutien.pixel.entities;
 
+import com.tutien.pixel.entities.enums.directEnum;
 import jakarta.persistence.*;
 
 @Entity
@@ -16,6 +17,24 @@ public class portalEntity {
     private int toX;
     private int toY;
     private String mapCode;
+    private directEnum dir;
+    private String mapName;
+
+    public String getMapName() {
+        return mapName;
+    }
+
+    public void setMapName(String mapName) {
+        this.mapName = mapName;
+    }
+
+    public directEnum getDir() {
+        return dir;
+    }
+
+    public void setDir(directEnum dir) {
+        this.dir = dir;
+    }
 
     public String getMapCode() {
         return mapCode;

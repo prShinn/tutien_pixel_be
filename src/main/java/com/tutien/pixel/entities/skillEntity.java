@@ -1,5 +1,7 @@
 package com.tutien.pixel.entities;
 
+import com.tutien.pixel.entities.enums.linhCanEnum;
+import com.tutien.pixel.entities.enums.skillType;
 import jakarta.persistence.*;
 
 @Entity

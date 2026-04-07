@@ -1,5 +1,6 @@
 package com.tutien.pixel.entities;
 
+import com.tutien.pixel.entities.enums.loaiTrangBi;
 import jakarta.persistence.*;
 
 @Entity
