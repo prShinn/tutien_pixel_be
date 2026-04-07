@@ -1,5 +1,6 @@
 package com.tutien.pixel.services;
 
+import com.tutien.pixel.entities.dtos.PortalDto;
 import com.tutien.pixel.entities.enums.directEnum;
 import com.tutien.pixel.entities.portalEntity;
 import com.tutien.pixel.entities.worldEntity;
@@ -8,6 +9,7 @@ import com.tutien.pixel.repositories.iRepositories.IGenericService;
 import com.tutien.pixel.utils.maps.MapUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.web.bind.annotation.RequestParam;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
@@ -44,8 +46,11 @@ public class PortalService implements IGenericService<portalEntity, Integer> {
     public portalEntity save(portalEntity entity) {
         // Đảm bảo quan hệ 2 chiều được thiết lập trước khi lưu
         Optional<worldEntity> world = worldService.findByCode(entity.getMapCode());
-        Optional<worldEntity> worldDen = worldService.findByCode(entity.getMapCode());
-        if (worldDen.isPresent() && world.isPresent() && world == worldDen) {
+        Optional<worldEntity> worldDen = worldService.findByCode(entity.getDenMap());
+        if (world.isEmpty() && worldDen.isEmpty()) {
+            throw new RuntimeException("Thieu du lieu map");
+        }
+        if (world == worldDen) {
             throw new RuntimeException("Map den khong duoc trung map hien tai");
         }
         if (world.isPresent() && worldDen.isPresent()) {

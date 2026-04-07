@@ -12,11 +12,8 @@ public class canhGioiEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private int id;
     @Column(unique = true)
-    private int stt;
+    private String code;
     private String name;
-    private int capDotPha;
-    private int tuViDotPha;
-    private String vatPhamDotPha;
 
     public int getId() {
         return id;
@@ -26,12 +23,12 @@ public class canhGioiEntity {
         this.id = id;
     }
 
-    public int getStt() {
-        return stt;
+    public String getCode() {
+        return code;
     }
 
-    public void setStt(int stt) {
-        this.stt = stt;
+    public void setCode(String code) {
+        this.code = code;
     }
 
     public String getName() {
@@ -40,29 +37,5 @@ public class canhGioiEntity {
 
     public void setName(String name) {
         this.name = name;
-    }
-
-    public int getCapDotPha() {
-        return capDotPha;
-    }
-
-    public void setCapDotPha(int capDotPha) {
-        this.capDotPha = capDotPha;
-    }
-
-    public int getTuViDotPha() {
-        return tuViDotPha;
-    }
-
-    public void setTuViDotPha(int tuViDotPha) {
-        this.tuViDotPha = tuViDotPha;
-    }
-
-    public String getVatPhamDotPha() {
-        return vatPhamDotPha;
-    }
-
-    public void setVatPhamDotPha(String vatPhamDotPha) {
-        this.vatPhamDotPha = vatPhamDotPha;
     }
 }

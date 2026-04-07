@@ -16,7 +16,6 @@ public class playerEntity {
     @Enumerated(EnumType.STRING)
     private linhCanEnum root;
     private String canhGioi;
-    private String daiCanhGioi;
     private int hp;
     private int maxHp;
     private int mp;
@@ -31,8 +30,35 @@ public class playerEntity {
     private trangBiEmbed trangBi;
     private int iventoryIndex;
     private int attackCD;
-    private int heal_hp;
-    private int heal_mp;
+    private double heal_hp;
+    private double heal_mp;
+    private int sttDaiCanhGioi;
+    private int sttCanhGioi;
+    private String jsonIventory;
+
+    public String getJsonIventory() {
+        return jsonIventory;
+    }
+
+    public void setJsonIventory(String jsonIventory) {
+        this.jsonIventory = jsonIventory;
+    }
+
+    public int getSttDaiCanhGioi() {
+        return sttDaiCanhGioi;
+    }
+
+    public void setSttDaiCanhGioi(int sttDaiCanhGioi) {
+        this.sttDaiCanhGioi = sttDaiCanhGioi;
+    }
+
+    public int getSttCanhGioi() {
+        return sttCanhGioi;
+    }
+
+    public void setSttCanhGioi(int sttCanhGioi) {
+        this.sttCanhGioi = sttCanhGioi;
+    }
 
     public int getAttackCD() {
         return attackCD;
@@ -42,19 +68,19 @@ public class playerEntity {
         this.attackCD = attackCD;
     }
 
-    public int getHeal_hp() {
+    public double getHeal_hp() {
         return heal_hp;
     }
 
-    public void setHeal_hp(int heal_hp) {
+    public void setHeal_hp(double heal_hp) {
         this.heal_hp = heal_hp;
     }
 
-    public int getHeal_mp() {
+    public double getHeal_mp() {
         return heal_mp;
     }
 
-    public void setHeal_mp(int heal_mp) {
+    public void setHeal_mp(double heal_mp) {
         this.heal_mp = heal_mp;
     }
 
@@ -105,21 +131,12 @@ public class playerEntity {
     public void setRoot(linhCanEnum root) {
         this.root = root;
     }
-
     public String getCanhGioi() {
         return canhGioi;
     }
 
     public void setCanhGioi(String canhGioi) {
         this.canhGioi = canhGioi;
-    }
-
-    public String getDaiCanhGioi() {
-        return daiCanhGioi;
-    }
-
-    public void setDaiCanhGioi(String daiCanhGioi) {
-        this.daiCanhGioi = daiCanhGioi;
     }
 
     public int getHp() {
