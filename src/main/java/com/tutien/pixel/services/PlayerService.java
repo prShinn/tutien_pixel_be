@@ -30,35 +30,55 @@ public class PlayerService {
     }
 
     public playerEntity update(int id, playerEntity u) {
-        playerEntity x = repo.findById(id).orElseThrow();
-        // copy toàn bộ field
-        x.setUserId(u.getUserId());
-        x.setStats(u.getStats());
-        x.setName(u.getName());
-        x.setRoot(u.getRoot());
-        x.setCanhGioi(u.getCanhGioi());
-        x.setHp(u.getHp());
-        x.setMaxHp(u.getMaxHp());
-        x.setMp(u.getMp());
-        x.setMaxMp(u.getMaxMp());
-        x.setXu(u.getXu());
-        x.setTuVi(u.getTuVi());
-        x.setTuViLenCap(u.getTuViLenCap());
-        x.setX(u.getX());
-        x.setY(u.getY());
-        x.setPx(u.getPx());
-        x.setPy(u.getPy());
-        x.setTrangBi(u.getTrangBi());
-        x.setIventoryIndex(u.getIventoryIndex());
-        x.setAttackCD(u.getAttackCD());
-        x.setHeal_hp(u.getHeal_hp());
-        x.setHeal_mp(u.getHeal_mp());
-        x.setSttDaiCanhGioi(u.getSttDaiCanhGioi());
-        x.setSttCanhGioi(u.getSttCanhGioi());
-        x.setJsonIventory(u.getJsonIventory());
-        return repo.save(x);
+        playerEntity existingPlayer = repo.findById(id)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy người chơi với ID: " + id));
+
+        // 2. Cập nhật các trường cơ bản
+        existingPlayer.setName(u.getName());
+        existingPlayer.setLinhCan(u.getLinhCan());
+        existingPlayer.setTenCanhGioi(u.getTenCanhGioi());
+        existingPlayer.setMaCanhGioi(u.getMaCanhGioi());
+        existingPlayer.setTangTuVi(u.getTangTuVi());
+
+        // 3. Cập nhật chỉ số (Stats & HP/MP)
+        existingPlayer.setHp(u.getHp());
+        existingPlayer.setMaxHp(u.getMaxHp());
+        existingPlayer.setMp(u.getMp());
+        existingPlayer.setMaxMp(u.getMaxMp());
+        existingPlayer.setHeal_hp(u.getHeal_hp());
+        existingPlayer.setHeal_mp(u.getHeal_mp());
+
+        // 4. Cập nhật tài nguyên & kinh nghiệm
+        existingPlayer.setXu(u.getXu());
+        existingPlayer.setTuViHienTai(u.getTuViHienTai());
+        existingPlayer.setTuViLenCap(u.getTuViLenCap());
+
+        // 5. Cập nhật vị trí & Map
+        existingPlayer.setX(u.getX());
+        existingPlayer.setY(u.getY());
+        existingPlayer.setPx(u.getPx());
+        existingPlayer.setPy(u.getPy());
+        existingPlayer.setMapCode(u.getMapCode());
+
+        // 6. Cập nhật Embeddable và JSON (Inventory/Trang bị)
+        existingPlayer.setStats(u.getStats());
+        existingPlayer.setTrangBi(u.getTrangBi());
+        existingPlayer.setIventoryIndex(u.getIventoryIndex());
+        existingPlayer.setJsonIventory(u.getJsonIventory());
+        existingPlayer.setAttackCD(u.getAttackCD());
+
+        // 7. Lưu vào Database
+        return repo.save(existingPlayer);
     }
 
+    public void updatePosition(int id, int x, int y, String mapCode) {
+        repo.findById(id).ifPresent(p -> {
+            p.setX(x);
+            p.setY(y);
+            p.setMapCode(mapCode);
+            repo.save(p);
+        });
+    }
     public void delete(int id) {
         repo.deleteById(id);
     }

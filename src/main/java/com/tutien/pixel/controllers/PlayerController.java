@@ -28,7 +28,10 @@ public class PlayerController {
     public ResponseEntity<?> getByUser(@PathVariable int id) {
         return ResponseEntity.of(service.getByUser(id));
     }
-
+    @PostMapping("/pos")
+    public void updatePos(@RequestBody playerEntity p) {
+        service.updatePosition(p.getId(), p.getX(), p.getY(), p.getMapCode());
+    }
     @PostMapping
     public playerEntity create(@RequestBody playerEntity e) {
         return service.create(e);

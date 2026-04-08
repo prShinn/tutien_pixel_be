@@ -11,5 +11,5 @@ public enum linhCanEnum {
     PHONG,
     LOI,
     THOI_GIAN,
-    KHONG_KHONG
+    KHONG_GIAN
 }

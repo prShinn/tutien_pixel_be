@@ -14,83 +14,28 @@ public class playerEntity {
     @Column(unique = true)
     private String name;
     @Enumerated(EnumType.STRING)
-    private linhCanEnum root;
-    private String canhGioi;
+    private linhCanEnum linhCan;
+    private String tenCanhGioi;
+    private int tangTuVi;
+    private String maCanhGioi;
     private int hp;
     private int maxHp;
     private int mp;
     private int maxMp;
     private int xu;
-    private int tuVi;
+    private int tuViHienTai;
     private int tuViLenCap;
     private int x; //spawn tại x
     private int y; // spawn tai y
     private int px;
     private int py;
+    private String mapCode;
     private trangBiEmbed trangBi;
     private int iventoryIndex;
     private int attackCD;
     private double heal_hp;
     private double heal_mp;
-    private int sttDaiCanhGioi;
-    private int sttCanhGioi;
     private String jsonIventory;
-
-    public String getJsonIventory() {
-        return jsonIventory;
-    }
-
-    public void setJsonIventory(String jsonIventory) {
-        this.jsonIventory = jsonIventory;
-    }
-
-    public int getSttDaiCanhGioi() {
-        return sttDaiCanhGioi;
-    }
-
-    public void setSttDaiCanhGioi(int sttDaiCanhGioi) {
-        this.sttDaiCanhGioi = sttDaiCanhGioi;
-    }
-
-    public int getSttCanhGioi() {
-        return sttCanhGioi;
-    }
-
-    public void setSttCanhGioi(int sttCanhGioi) {
-        this.sttCanhGioi = sttCanhGioi;
-    }
-
-    public int getAttackCD() {
-        return attackCD;
-    }
-
-    public void setAttackCD(int attackCD) {
-        this.attackCD = attackCD;
-    }
-
-    public double getHeal_hp() {
-        return heal_hp;
-    }
-
-    public void setHeal_hp(double heal_hp) {
-        this.heal_hp = heal_hp;
-    }
-
-    public double getHeal_mp() {
-        return heal_mp;
-    }
-
-    public void setHeal_mp(double heal_mp) {
-        this.heal_mp = heal_mp;
-    }
-
-    public int getIventoryIndex() {
-        return iventoryIndex;
-    }
-
-    public void setIventoryIndex(int iventoryIndex) {
-        this.iventoryIndex = iventoryIndex;
-    }
 
     public int getId() {
         return id;
@@ -124,19 +69,36 @@ public class playerEntity {
         this.name = name;
     }
 
-    public linhCanEnum getRoot() {
-        return root;
+    public linhCanEnum getLinhCan() {
+        return linhCan;
     }
 
-    public void setRoot(linhCanEnum root) {
-        this.root = root;
-    }
-    public String getCanhGioi() {
-        return canhGioi;
+    public void setLinhCan(linhCanEnum linhCan) {
+        this.linhCan = linhCan;
     }
 
-    public void setCanhGioi(String canhGioi) {
-        this.canhGioi = canhGioi;
+    public String getTenCanhGioi() {
+        return tenCanhGioi;
+    }
+
+    public void setTenCanhGioi(String tenCanhGioi) {
+        this.tenCanhGioi = tenCanhGioi;
+    }
+
+    public int getTangTuVi() {
+        return tangTuVi;
+    }
+
+    public void setTangTuVi(int tangTuVi) {
+        this.tangTuVi = tangTuVi;
+    }
+
+    public String getMaCanhGioi() {
+        return maCanhGioi;
+    }
+
+    public void setMaCanhGioi(String maCanhGioi) {
+        this.maCanhGioi = maCanhGioi;
     }
 
     public int getHp() {
@@ -179,12 +141,12 @@ public class playerEntity {
         this.xu = xu;
     }
 
-    public int getTuVi() {
-        return tuVi;
+    public int getTuViHienTai() {
+        return tuViHienTai;
     }
 
-    public void setTuVi(int tuVi) {
-        this.tuVi = tuVi;
+    public void setTuViHienTai(int tuViHienTai) {
+        this.tuViHienTai = tuViHienTai;
     }
 
     public int getTuViLenCap() {
@@ -227,11 +189,59 @@ public class playerEntity {
         this.py = py;
     }
 
+    public String getMapCode() {
+        return mapCode;
+    }
+
+    public void setMapCode(String mapCode) {
+        this.mapCode = mapCode;
+    }
+
     public trangBiEmbed getTrangBi() {
         return trangBi;
     }
 
     public void setTrangBi(trangBiEmbed trangBi) {
         this.trangBi = trangBi;
+    }
+
+    public int getIventoryIndex() {
+        return iventoryIndex;
+    }
+
+    public void setIventoryIndex(int iventoryIndex) {
+        this.iventoryIndex = iventoryIndex;
+    }
+
+    public int getAttackCD() {
+        return attackCD;
+    }
+
+    public void setAttackCD(int attackCD) {
+        this.attackCD = attackCD;
+    }
+
+    public double getHeal_hp() {
+        return heal_hp;
+    }
+
+    public void setHeal_hp(double heal_hp) {
+        this.heal_hp = heal_hp;
+    }
+
+    public double getHeal_mp() {
+        return heal_mp;
+    }
+
+    public void setHeal_mp(double heal_mp) {
+        this.heal_mp = heal_mp;
+    }
+
+    public String getJsonIventory() {
+        return jsonIventory;
+    }
+
+    public void setJsonIventory(String jsonIventory) {
+        this.jsonIventory = jsonIventory;
     }
 }

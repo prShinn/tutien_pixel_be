@@ -8,7 +8,7 @@ public class trangBiEmbed {
     private String ao;
     private String giay;
     private String mu;
-    private String baoTay;
+    private String tay;
     private String nhan;
     private String vong;
 
@@ -44,12 +44,12 @@ public class trangBiEmbed {
         this.mu = mu;
     }
 
-    public String getBaoTay() {
-        return baoTay;
+    public String getTay() {
+        return tay;
     }
 
-    public void setBaoTay(String baoTay) {
-        this.baoTay = baoTay;
+    public void setTay(String tay) {
+        this.tay = tay;
     }
 
     public String getNhan() {
