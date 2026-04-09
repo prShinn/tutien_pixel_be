@@ -1,5 +1,8 @@
 package com.tutien.pixel.entities.dtos;
 
+import com.tutien.pixel.entities.monsterEntity;
+import com.tutien.pixel.entities.npcEntity;
+
 import java.util.List;
 
 public class WorldDto {
@@ -10,8 +13,10 @@ public class WorldDto {
     private int w;
     private int h;
     private List<PortalDto> portals;
+    private List<monsterEntity> monsters;
+    private List<npcEntity> npcs;
 
-    public WorldDto(int id, String tenMap, String code, int[][] jsonMap, int w, int h, List<PortalDto> portals) {
+    public WorldDto(int id, String tenMap, String code, int[][] jsonMap, int w, int h, List<PortalDto> portals, List<monsterEntity> monsters, List<npcEntity> npcs) {
         this.id = id;
         this.tenMap = tenMap;
         this.code = code;
@@ -19,6 +24,24 @@ public class WorldDto {
         this.w = w;
         this.h = h;
         this.portals = portals;
+        this.monsters = monsters;
+        this.npcs = npcs;
+    }
+
+    public List<monsterEntity> getMonsters() {
+        return monsters;
+    }
+
+    public void setMonsters(List<monsterEntity> monsters) {
+        this.monsters = monsters;
+    }
+
+    public List<npcEntity> getNpcs() {
+        return npcs;
+    }
+
+    public void setNpcs(List<npcEntity> npcs) {
+        this.npcs = npcs;
     }
 
     public List<PortalDto> getPortals() {

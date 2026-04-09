@@ -8,8 +8,8 @@ public class spawnMonsterEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private int id;
-    private int mapCode;
-    private int monsterCode;
+    private String mapCode;
+    private String monsterCode;
     private int x;
     private int y;
     private int w;
@@ -24,19 +24,19 @@ public class spawnMonsterEntity {
         this.id = id;
     }
 
-    public int getMapCode() {
+    public String getMapCode() {
         return mapCode;
     }
 
-    public void setMapCode(int mapCode) {
+    public void setMapCode(String mapCode) {
         this.mapCode = mapCode;
     }
 
-    public int getMonsterCode() {
+    public String getMonsterCode() {
         return monsterCode;
     }
 
-    public void setMonsterCode(int monsterCode) {
+    public void setMonsterCode(String monsterCode) {
         this.monsterCode = monsterCode;
     }
 

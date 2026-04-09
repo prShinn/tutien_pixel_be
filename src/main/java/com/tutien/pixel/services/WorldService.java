@@ -2,9 +2,11 @@ package com.tutien.pixel.services;
 
 import com.tutien.pixel.entities.dtos.PortalDto;
 import com.tutien.pixel.entities.dtos.WorldDto;
+import com.tutien.pixel.entities.monsterEntity;
+import com.tutien.pixel.entities.npcEntity;
+import com.tutien.pixel.entities.spawnMonsterEntity;
 import com.tutien.pixel.entities.worldEntity;
-import com.tutien.pixel.repositories.PortalRepository;
-import com.tutien.pixel.repositories.WorldRepository;
+import com.tutien.pixel.repositories.*;
 import com.tutien.pixel.repositories.iRepositories.IGenericService;
 import com.tutien.pixel.utils.maps.MapUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,6 +14,7 @@ import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 @Service
@@ -21,6 +24,12 @@ public class WorldService implements IGenericService<worldEntity, Integer> {
     private WorldRepository worldRepository;
     @Autowired
     private PortalRepository portalRepo;
+    @Autowired
+    private MonsterRepository monsterRepo;
+    @Autowired
+    private NpcRepository npcRepo;
+    @Autowired
+    private SpawnMonsterRepository spawnMonsterRepo;
     @Autowired
     private MapUtils mapUtils;
     @Autowired
@@ -65,7 +74,14 @@ public class WorldService implements IGenericService<worldEntity, Integer> {
                         p.getMapCode()
                 ))
                 .toList();
+        List<npcEntity> npcs = npcRepo.findByMapCode(code);
+        List<spawnMonsterEntity> spawns = spawnMonsterRepo.findByMapCode(code);
 
+        List<monsterEntity> monsters = spawns.stream()
+                .map(sp -> monsterRepo.findByCode(String.valueOf(sp.getMonsterCode()))
+                        .orElse(null))
+                .filter(Objects::nonNull)
+                .toList();
         // Trả ra DTO dạng Optional
         return Optional.of(
                 new WorldDto(
@@ -75,7 +91,9 @@ public class WorldService implements IGenericService<worldEntity, Integer> {
                         json,
                         w.getW(),
                         w.getH(),
-                        portalDtos
+                        portalDtos,
+                        monsters,
+                        npcs
                 )
         );
     }
