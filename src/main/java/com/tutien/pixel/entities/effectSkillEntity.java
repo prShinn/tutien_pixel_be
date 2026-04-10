@@ -17,6 +17,8 @@ public class effectSkillEntity {
     private int lamCham;
     private String classCss;
     private int gayChoang;
+    private String icon;
+    private int isBuff;
 
     public int getId() {
         return id;

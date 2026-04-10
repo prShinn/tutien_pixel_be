@@ -36,6 +36,33 @@ public class playerEntity {
     private double heal_hp;
     private double heal_mp;
     private String jsonIventory;
+    private String crit;
+    private int speed;
+    private String equip_slot;
+
+    public String getEquip_slot() {
+        return equip_slot;
+    }
+
+    public void setEquip_slot(String equip_slot) {
+        this.equip_slot = equip_slot;
+    }
+
+    public String getCrit() {
+        return crit;
+    }
+
+    public void setCrit(String crit) {
+        this.crit = crit;
+    }
+
+    public int getSpeed() {
+        return speed;
+    }
+
+    public void setSpeed(int speed) {
+        this.speed = speed;
+    }
 
     public int getId() {
         return id;

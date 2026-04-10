@@ -1,5 +1,6 @@
 package com.tutien.pixel.entities;
 
+import com.tutien.pixel.entities.enums.capTrangBi;
 import com.tutien.pixel.entities.enums.loaiTrangBi;
 import jakarta.persistence.*;
 
@@ -21,7 +22,16 @@ public class vatPhamEntity {
     private int giaTriTuVi;
     @Enumerated(EnumType.STRING)
     private statsEmbed giaTriTang;
+    @Enumerated(EnumType.STRING)
+    private capTrangBi capTrangBi;
 
+    public capTrangBi getCapTrangBi() {
+        return capTrangBi;
+    }
+
+    public void setCapTrangBi(capTrangBi capTrangBi) {
+        this.capTrangBi = capTrangBi;
+    }
 
     public int getId() {
         return id;

@@ -12,5 +12,6 @@ public enum loaiTrangBi {
     BELT,
     HEAL,
     ACIDENT,
-    ELEMSTONE
+    ELEMSTONE,
+    BOOK
 }

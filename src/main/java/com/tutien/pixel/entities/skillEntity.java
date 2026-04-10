@@ -18,7 +18,7 @@ public class skillEntity {
     private String icon;
     private int mpTieuHao;
     private int hoiChieu;
-    private int satThuong;
+    private double satThuong;
     private int dienRong;
     private statsEmbed stats;
     private int thoiGianBuff;
@@ -98,11 +98,11 @@ public class skillEntity {
         this.hoiChieu = hoiChieu;
     }
 
-    public int getSatThuong() {
+    public double getSatThuong() {
         return satThuong;
     }
 
-    public void setSatThuong(int satThuong) {
+    public void setSatThuong(double satThuong) {
         this.satThuong = satThuong;
     }
 
