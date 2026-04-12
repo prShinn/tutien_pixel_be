@@ -11,6 +11,33 @@ public class canhGioiEntity {
     @Column(unique = true)
     private String code;
     private String name;
+    private int daiCanhGioi;
+    private int tuViTienCap;
+    private int stt;
+
+    public int getDaiCanhGioi() {
+        return daiCanhGioi;
+    }
+
+    public void setDaiCanhGioi(int daiCanhGioi) {
+        this.daiCanhGioi = daiCanhGioi;
+    }
+
+    public int getTuViTienCap() {
+        return tuViTienCap;
+    }
+
+    public void setTuViTienCap(int tuViTienCap) {
+        this.tuViTienCap = tuViTienCap;
+    }
+
+    public int getStt() {
+        return stt;
+    }
+
+    public void setStt(int stt) {
+        this.stt = stt;
+    }
 
     public int getId() {
         return id;

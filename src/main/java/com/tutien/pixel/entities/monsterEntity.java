@@ -28,6 +28,24 @@ public class monsterEntity {
     private String sfxCode;
     private int spawnCD;
     private int isBoss;
+    private int spawnX;
+    private int spawnY;
+
+    public int getSpawnX() {
+        return spawnX;
+    }
+
+    public void setSpawnX(int spawnX) {
+        this.spawnX = spawnX;
+    }
+
+    public int getSpawnY() {
+        return spawnY;
+    }
+
+    public void setSpawnY(int spawnY) {
+        this.spawnY = spawnY;
+    }
 
     public int getIsBoss() {
         return isBoss;

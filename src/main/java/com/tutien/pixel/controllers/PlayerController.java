@@ -1,5 +1,6 @@
 package com.tutien.pixel.controllers;
 
+import com.tutien.pixel.entities.dtos.PlayerDto;
 import com.tutien.pixel.entities.playerEntity;
 import com.tutien.pixel.services.PlayerService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,11 +21,14 @@ public class PlayerController {
         return service.all();
     }
 
-    @GetMapping("/{id}")
+    @GetMapping("/old/{id}")
     public ResponseEntity<?> get(@PathVariable int id) {
         return ResponseEntity.of(service.get(id));
     }
-
+    @GetMapping("/{id}")
+    public PlayerDto getById(@PathVariable int id) {
+        return service.getPlayerDto(id);
+    }
     @GetMapping("/by-user/{id}")
     public ResponseEntity<?> getByUser(@PathVariable int id) {
         return ResponseEntity.of(service.getByUser(id));

@@ -3,15 +3,17 @@ package com.tutien.pixel.utils.maps;
 import org.springframework.stereotype.Component;
 
 import java.util.Random;
+
 @Component
 public class MapUtils {
     public static final int GRASS = 0;
-    public static final int WATER = 1;
-    public static final int MTN = 2;
-    public static final int TREE = 3;
-    public static final int WALL = 4;
-    public static final int STONE = 5;
-    public static final int FLOOR = 6;
+    public static final int STONE = 1;
+    public static final int WATER = 2;
+    public static final int WALL = 3;
+    public static final int FLOOR = 4;
+    public static final int TREE = 5;
+    public static final int MTN = 6;
+    public static final int PLAZA = 7;
 
     private int w;
     private int h;
@@ -32,40 +34,42 @@ public class MapUtils {
 
         // Tạo Lakes (Ao hồ) - 3 lần
         for (int i = 0; i < 3; i++) {
-            fillRect(tiles, randInt(5, 75), randInt(5, 50),
-                    Math.round(rand.nextFloat() * 10) / 2,
-                    Math.round(rand.nextFloat() * 10) / 3, WATER);
+            fillRect(tiles, randInt(5, w), randInt(5, h),
+                    randInt(5, w / 10 + 5) / 2,
+                    randInt(5, h / 10 + 10) / 3, WATER);
         }
 
         // Tạo Mountains (Núi) - 2 lần
         for (int i = 0; i < 2; i++) {
-            fillRect(tiles, Math.round(rand.nextFloat() * 75), Math.round(rand.nextFloat() * 50),
-                    Math.round(rand.nextFloat() * 10) / 2,
-                    Math.round(rand.nextFloat() * 10) / 3, MTN);
+            fillRect(tiles, randInt(5, w), randInt(5, h),
+                    randInt(5, w / 10 + 5) / 2,
+                    randInt(5, h / 10 + 10) / 3, MTN);
         }
 
         // Tạo Tree clusters (Cụm cây) - 3 lần
         for (int i = 0; i < 3; i++) {
-            fillRect(tiles, Math.round(rand.nextFloat() * 75), Math.round(rand.nextFloat() * 50),
-                    Math.round(rand.nextFloat() * 10) / 2,
-                    Math.round(rand.nextFloat() * 10) / 3, TREE);
+            fillRect(tiles, randInt(5, w), randInt(5, h),
+                    randInt(5, w / 10 + 5) / 2,
+                    randInt(5, h / 10 + 15) / 2, TREE);
         }
 
         // Phân tán đá
-        scatter(tiles, STONE, 25, GRASS);
+
+        scatter(tiles, STONE, randInt(w / 3, h / 3), GRASS);
+        scatter(tiles, FLOOR, randInt(w / 3, h / 3), GRASS);
 
         // Tạo đường đi (Road)
         for (int y = 2; y < h - 2; y++) {
-            if (tiles[y][26] == GRASS) {
-                tiles[y][26] = FLOOR;
+            if (tiles[y][h / 2] == GRASS) {
+                tiles[y][h / 2] = FLOOR;
             }
         }
-
-        // Phá tường phía Bắc để làm Portal
-        if (w > 26) {
-            tiles[0][26] = FLOOR;
-            tiles[1][26] = FLOOR;
-        }
+//
+//        // Phá tường phía Bắc để làm Portal
+//        if (w > 26) {
+//            tiles[0][26] = FLOOR;
+//            tiles[1][26] = FLOOR;
+//        }
 
         return tiles;
     }
@@ -107,6 +111,7 @@ public class MapUtils {
     }
 
     public int randInt(int min, int max) {
+        if (min > max) return rand.nextInt((min - max) + 1) + max;
         return rand.nextInt((max - min) + 1) + min;
     }
 }

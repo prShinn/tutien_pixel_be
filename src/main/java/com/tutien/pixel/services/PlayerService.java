@@ -1,7 +1,12 @@
 package com.tutien.pixel.services;
 
+import com.tutien.pixel.entities.canhGioiEntity;
+import com.tutien.pixel.entities.dtos.PlayerDto;
 import com.tutien.pixel.entities.playerEntity;
+import com.tutien.pixel.entities.skillEntity;
+import com.tutien.pixel.repositories.CanhGioiRepository;
 import com.tutien.pixel.repositories.PlayerRepository;
+import com.tutien.pixel.repositories.SkillRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -13,6 +18,10 @@ public class PlayerService {
 
     @Autowired
     private PlayerRepository repo;
+    @Autowired
+    private SkillRepository skillRepo;
+    @Autowired
+    private CanhGioiRepository canhGioiRepo;
 
     public List<playerEntity> all() {
         return repo.findAll();
@@ -21,9 +30,53 @@ public class PlayerService {
     public Optional<playerEntity> get(int id) {
         return repo.findById(id);
     }
+
     public Optional<playerEntity> getByUser(int id) {
         return repo.findByUserId(id);
     }
+
+    public PlayerDto getPlayerDto(int id) {
+        playerEntity p = repo.findById(id)
+                .orElseThrow(() -> new RuntimeException("Player not found"));
+
+        List<skillEntity> skills = skillRepo.findByLinhCan(p.getLinhCan());
+        canhGioiEntity canhGioi = canhGioiRepo.findByCode(p.getMaCanhGioi());
+
+        return new PlayerDto(
+                p.getId(),
+                p.getUserId(),
+                p.getStats(),
+                p.getName(),
+                p.getLinhCan(),
+                canhGioi.getName(),
+                canhGioi.getStt(),
+                p.getMaCanhGioi(),
+                p.getHp(),
+                p.getMaxHp(),
+                p.getMp(),
+                p.getMaxMp(),
+                p.getXu(),
+                p.getTuViHienTai(),
+                canhGioi.getTuViTienCap(),
+                p.getX(),
+                p.getY(),
+                p.getPx(),
+                p.getPy(),
+                p.getMapCode(),
+                p.getTrangBi(),
+                p.getIventoryIndex(),
+                p.getAttackCD(),
+                p.getHeal_hp(),
+                p.getHeal_mp(),
+                p.getJsonIventory(),
+                p.getCrit(),
+                (int) p.getSpeed(),
+                p.getEquip_slot(),
+                skills,
+                canhGioi
+        );
+    }
+
 
     public playerEntity create(playerEntity e) {
         return repo.save(e);
@@ -79,6 +132,7 @@ public class PlayerService {
             repo.save(p);
         });
     }
+
     public void delete(int id) {
         repo.deleteById(id);
     }

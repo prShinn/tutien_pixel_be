@@ -37,7 +37,7 @@ public class playerEntity {
     private double heal_mp;
     private String jsonIventory;
     private String crit;
-    private int speed;
+    private float speed;
     private String equip_slot;
 
     public String getEquip_slot() {
@@ -56,11 +56,11 @@ public class playerEntity {
         this.crit = crit;
     }
 
-    public int getSpeed() {
+    public float getSpeed() {
         return speed;
     }
 
-    public void setSpeed(int speed) {
+    public void setSpeed(float speed) {
         this.speed = speed;
     }
 

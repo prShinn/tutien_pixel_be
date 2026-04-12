@@ -26,11 +26,19 @@ public class CanhGioiService {
         return repo.save(e);
     }
 
-    public canhGioiEntity update(int id, canhGioiEntity u) {
-        canhGioiEntity x = repo.findById(id).orElseThrow();
-        x.setCode(u.getCode());
-        x.setName(u.getName());
-        return repo.save(x);
+    public canhGioiEntity getById(int id) {
+        return repo.findById(id)
+                .orElseThrow(() -> new RuntimeException("Not found"));
+    }
+
+    public canhGioiEntity update(int id, canhGioiEntity newE) {
+        canhGioiEntity e = getById(id);
+        e.setCode(newE.getCode());
+        e.setName(newE.getName());
+        e.setDaiCanhGioi(newE.getDaiCanhGioi());
+        e.setTuViTienCap(newE.getTuViTienCap());
+        e.setStt(newE.getStt());
+        return repo.save(e);
     }
 
     public void delete(int id) {
