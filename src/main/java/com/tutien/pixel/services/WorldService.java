@@ -90,25 +90,68 @@ public class WorldService implements IGenericService<worldEntity, Integer> {
                     dto.setCode(monster.getCode());
 
                     List<vatPhamEntity> items = new ArrayList<>();
-                    String[] codes = objectMapper.readValue(monster.getDropItem(), String[].class);
-
-
-                    for (int i = 0; i < codes.length; i++) {
+                    if (monster.getDropItem() != null) {
                         try {
-                            items.add(vatPhamRepo.findByCode(codes[i]).get());
+                            String[] codes = objectMapper.readValue(monster.getDropItem(), String[].class);
+                            for (int i = 0; i < codes.length; i++) {
+                                try {
+                                    items.add(vatPhamRepo.findByCode(codes[i]).get());
 
+                                } catch (Exception e) {
+                                    throw new RuntimeException(e.getMessage());
+                                }
+                            }
                         } catch (Exception e) {
                             throw new RuntimeException(e.getMessage());
                         }
                     }
+//                    dto.setDropItems(items);
+//                    dto.setAtk(monster.getAtk());
+//                    dto.setDef(monster.getDef());
+//                    dto.setHp(monster.getHp());
+//                    dto.setIsBoss(monster.getIsBoss());
+//                    dto.setLevel(monster.getLevel());
+//                    dto.setMoneyDropFrom(monster.getMoneyDropFrom());
+//                    dto.setMoneyDropTo(monster.getMoneyDropTo());
+//                    dto.setTyLeRoiTien(monster.getTyLeRoiTien());
+//                    dto.setSpeed(monster.getSpeed());
+//                    dto.setSpawnCD(monster.getSpawnCD());
+//                    dto.setId(monster.getId());
+//                    dto.setName(monster.getName());
+//                    dto.setSpawnX(monster.getSpawnX());
+//                    dto.setSpawnY(monster.getSpawnY());
+                    dto.setId(monster.getId());
+                    dto.setCode(monster.getCode());
+                    dto.setName(monster.getName());
+                    dto.setLevel(monster.getLevel());
+                    dto.setHp(monster.getHp());
+                    dto.setAtk(monster.getAtk());
+                    dto.setDef(monster.getDef());
+                    dto.setSpeed(monster.getSpeed());
+                    dto.setMoneyDropTo(monster.getMoneyDropTo());
+                    dto.setMoneyDropFrom(monster.getMoneyDropFrom());
+                    dto.setTyLeRoiTien(monster.getTyLeRoiTien());
+                    dto.setTyLeRoiDo(monster.getTyLeRoiDo());
+                    dto.setColor(monster.getColor());
+                    dto.setSfx_name(monster.getSfx_name());
+                    dto.setSfxCode(monster.getSfxCode());
+                    dto.setSpawnCD(monster.getSpawnCD());
+                    dto.setIsBoss(monster.getIsBoss());
+                    dto.setSpawnX(monster.getSpawnX());
+                    dto.setSpawnY(monster.getSpawnY());
+                    dto.setDropItem(monster.getDropItem());
                     dto.setDropItems(items);
                     return dto;
                 })
-                .toList();
+                        .
+
+                toList();
 
         // Trả ra DTO dạng Optional
         return Optional.of(
-                new WorldDto(
+                new
+
+                        WorldDto(
                         w.getId(),
                         w.getTenMap(),
                         w.getCode(),
