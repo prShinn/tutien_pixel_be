@@ -17,7 +17,10 @@ public class MonsterController {
     public List<monsterEntity> all() {
         return service.all();
     }
-
+    @PutMapping("/{id}")
+    public monsterEntity update(@PathVariable int id, monsterEntity entity) {
+        return service.update(id, entity);
+    }
     @GetMapping("/{id}")
     public monsterEntity get(@PathVariable int id) {
         return service.get(id);

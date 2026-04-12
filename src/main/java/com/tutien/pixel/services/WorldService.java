@@ -1,11 +1,9 @@
 package com.tutien.pixel.services;
 
+import com.tutien.pixel.entities.*;
+import com.tutien.pixel.entities.dtos.MonsterDto;
 import com.tutien.pixel.entities.dtos.PortalDto;
 import com.tutien.pixel.entities.dtos.WorldDto;
-import com.tutien.pixel.entities.monsterEntity;
-import com.tutien.pixel.entities.npcEntity;
-import com.tutien.pixel.entities.spawnMonsterEntity;
-import com.tutien.pixel.entities.worldEntity;
 import com.tutien.pixel.repositories.*;
 import com.tutien.pixel.repositories.iRepositories.IGenericService;
 import com.tutien.pixel.utils.maps.MapUtils;
@@ -13,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -26,6 +25,8 @@ public class WorldService implements IGenericService<worldEntity, Integer> {
     private PortalRepository portalRepo;
     @Autowired
     private MonsterRepository monsterRepo;
+    @Autowired
+    private VatPhamRepository vatPhamRepo;
     @Autowired
     private NpcRepository npcRepo;
     @Autowired
@@ -77,11 +78,34 @@ public class WorldService implements IGenericService<worldEntity, Integer> {
         List<npcEntity> npcs = npcRepo.findByMapCode(code);
         List<spawnMonsterEntity> spawns = spawnMonsterRepo.findByMapCode(code);
 
-        List<monsterEntity> monsters = spawns.stream()
-                .map(sp -> monsterRepo.findByCode(String.valueOf(sp.getMonsterCode()))
-                        .orElse(null))
-                .filter(Objects::nonNull)
+//        List<monsterEntity> monsters = spawns.stream()
+//                .map(sp -> monsterRepo.findByCode(String.valueOf(sp.getMonsterCode()))
+//                        .orElse(null))
+//                .filter(Objects::nonNull)
+//                .toList();
+        List<MonsterDto> monsters = spawns.stream().map(sp -> monsterRepo.findByCode(String.valueOf(sp.getMonsterCode()))
+                        .orElse(null)).filter(Objects::nonNull)
+                .map(monster -> {
+                    MonsterDto dto = new MonsterDto();
+                    dto.setCode(monster.getCode());
+
+                    List<vatPhamEntity> items = new ArrayList<>();
+                    String[] codes = objectMapper.readValue(monster.getDropItem(), String[].class);
+
+
+                    for (int i = 0; i < codes.length; i++) {
+                        try {
+                            items.add(vatPhamRepo.findByCode(codes[i]).get());
+
+                        } catch (Exception e) {
+                            throw new RuntimeException(e.getMessage());
+                        }
+                    }
+                    dto.setDropItems(items);
+                    return dto;
+                })
                 .toList();
+
         // Trả ra DTO dạng Optional
         return Optional.of(
                 new WorldDto(

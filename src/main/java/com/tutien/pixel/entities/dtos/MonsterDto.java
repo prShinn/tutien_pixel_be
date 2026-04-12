@@ -1,15 +1,11 @@
-package com.tutien.pixel.entities;
+package com.tutien.pixel.entities.dtos;
 
-import jakarta.persistence.*;
+import com.tutien.pixel.entities.vatPhamEntity;
+import jakarta.persistence.Column;
 
-import java.util.ArrayList;
 import java.util.List;
 
-@Entity
-@Table(name = "monster")
-public class monsterEntity {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+public class MonsterDto {
     private int id;
     @Column(unique = true)
     private String code;
@@ -31,54 +27,7 @@ public class monsterEntity {
     private int spawnX;
     private int spawnY;
     private String dropItem;
-
-    public String getDropItem() {
-        return dropItem;
-    }
-
-    public void setDropItem(String dropItem) {
-        this.dropItem = dropItem;
-    }
-
-    public int getSpawnX() {
-        return spawnX;
-    }
-
-    public void setSpawnX(int spawnX) {
-        this.spawnX = spawnX;
-    }
-
-    public int getSpawnY() {
-        return spawnY;
-    }
-
-    public void setSpawnY(int spawnY) {
-        this.spawnY = spawnY;
-    }
-
-    public int getIsBoss() {
-        return isBoss;
-    }
-
-    public void setIsBoss(int isBoss) {
-        this.isBoss = isBoss;
-    }
-
-    public int getSpawnCD() {
-        return spawnCD;
-    }
-
-    public void setSpawnCD(int spawnCD) {
-        this.spawnCD = spawnCD;
-    }
-
-    public String getSfxCode() {
-        return sfxCode;
-    }
-
-    public void setSfxCode(String sfxCode) {
-        this.sfxCode = sfxCode;
-    }
+    private List<vatPhamEntity> dropItems;
 
     public int getId() {
         return id;
@@ -190,5 +139,61 @@ public class monsterEntity {
 
     public void setSfx_name(String sfx_name) {
         this.sfx_name = sfx_name;
+    }
+
+    public String getSfxCode() {
+        return sfxCode;
+    }
+
+    public void setSfxCode(String sfxCode) {
+        this.sfxCode = sfxCode;
+    }
+
+    public int getSpawnCD() {
+        return spawnCD;
+    }
+
+    public void setSpawnCD(int spawnCD) {
+        this.spawnCD = spawnCD;
+    }
+
+    public int getIsBoss() {
+        return isBoss;
+    }
+
+    public void setIsBoss(int isBoss) {
+        this.isBoss = isBoss;
+    }
+
+    public int getSpawnX() {
+        return spawnX;
+    }
+
+    public void setSpawnX(int spawnX) {
+        this.spawnX = spawnX;
+    }
+
+    public int getSpawnY() {
+        return spawnY;
+    }
+
+    public void setSpawnY(int spawnY) {
+        this.spawnY = spawnY;
+    }
+
+    public String getDropItem() {
+        return dropItem;
+    }
+
+    public void setDropItem(String dropItem) {
+        this.dropItem = dropItem;
+    }
+
+    public List<vatPhamEntity> getDropItems() {
+        return dropItems;
+    }
+
+    public void setDropItems(List<vatPhamEntity> dropItems) {
+        this.dropItems = dropItems;
     }
 }

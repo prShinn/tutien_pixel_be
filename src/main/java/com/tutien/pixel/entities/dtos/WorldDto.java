@@ -13,10 +13,10 @@ public class WorldDto {
     private int w;
     private int h;
     private List<PortalDto> portals;
-    private List<monsterEntity> monsters;
+    private List<MonsterDto> monsters;
     private List<npcEntity> npcs;
 
-    public WorldDto(int id, String tenMap, String code, int[][] jsonMap, int w, int h, List<PortalDto> portals, List<monsterEntity> monsters, List<npcEntity> npcs) {
+    public WorldDto(int id, String tenMap, String code, int[][] jsonMap, int w, int h, List<PortalDto> portals, List<MonsterDto> monsters, List<npcEntity> npcs) {
         this.id = id;
         this.tenMap = tenMap;
         this.code = code;
@@ -28,11 +28,11 @@ public class WorldDto {
         this.npcs = npcs;
     }
 
-    public List<monsterEntity> getMonsters() {
+    public List<MonsterDto> getMonsters() {
         return monsters;
     }
 
-    public void setMonsters(List<monsterEntity> monsters) {
+    public void setMonsters(List<MonsterDto> monsters) {
         this.monsters = monsters;
     }
 

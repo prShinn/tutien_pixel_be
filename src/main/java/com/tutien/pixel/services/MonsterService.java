@@ -28,6 +28,12 @@ public class MonsterService {
         return repo.save(m);
     }
 
+    public monsterEntity update(int id, monsterEntity m) {
+        monsterEntity u = repo.findById(id).orElseThrow(() -> new RuntimeException("Không tìm thấy người chơi với ID: " + id));
+        m.setId(u.getId());
+        return repo.save(m);
+    }
+
     public void delete(int id) {
         repo.deleteById(id);
     }
