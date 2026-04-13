@@ -1,5 +1,6 @@
 package com.tutien.pixel.controllers;
 
+import com.tutien.pixel.entities.dtos.MonsterDto;
 import com.tutien.pixel.entities.monsterEntity;
 import com.tutien.pixel.services.MonsterService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,7 +28,7 @@ public class MonsterController {
     }
 
     @GetMapping("/code/{code}")
-    public monsterEntity getByCode(@PathVariable String code) {
+    public MonsterDto getByCode(@PathVariable String code) {
         return service.getByCode(code);
     }
 

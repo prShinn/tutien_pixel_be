@@ -15,6 +15,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 @Service
 public class WorldService implements IGenericService<worldEntity, Integer> {
@@ -24,7 +26,7 @@ public class WorldService implements IGenericService<worldEntity, Integer> {
     @Autowired
     private PortalRepository portalRepo;
     @Autowired
-    private MonsterRepository monsterRepo;
+    private MonsterService monsterRepo;
     @Autowired
     private VatPhamRepository vatPhamRepo;
     @Autowired
@@ -78,74 +80,18 @@ public class WorldService implements IGenericService<worldEntity, Integer> {
         List<npcEntity> npcs = npcRepo.findByMapCode(code);
         List<spawnMonsterEntity> spawns = spawnMonsterRepo.findByMapCode(code);
 
-//        List<monsterEntity> monsters = spawns.stream()
-//                .map(sp -> monsterRepo.findByCode(String.valueOf(sp.getMonsterCode()))
-//                        .orElse(null))
-//                .filter(Objects::nonNull)
-//                .toList();
-        List<MonsterDto> monsters = spawns.stream().map(sp -> monsterRepo.findByCode(String.valueOf(sp.getMonsterCode()))
-                        .orElse(null)).filter(Objects::nonNull)
-                .map(monster -> {
-                    MonsterDto dto = new MonsterDto();
-                    dto.setCode(monster.getCode());
+        List<MonsterDto> monsters = spawns.stream()
+                .flatMap(sp -> {
+                    MonsterDto monster = monsterRepo
+                            .getByCode(String.valueOf(sp.getMonsterCode()));
 
-                    List<vatPhamEntity> items = new ArrayList<>();
-                    if (monster.getDropItem() != null) {
-                        try {
-                            String[] codes = objectMapper.readValue(monster.getDropItem(), String[].class);
-                            for (int i = 0; i < codes.length; i++) {
-                                try {
-                                    items.add(vatPhamRepo.findByCode(codes[i]).get());
+                    if (monster == null) return Stream.empty();
 
-                                } catch (Exception e) {
-                                    throw new RuntimeException(e.getMessage());
-                                }
-                            }
-                        } catch (Exception e) {
-                            throw new RuntimeException(e.getMessage());
-                        }
-                    }
-//                    dto.setDropItems(items);
-//                    dto.setAtk(monster.getAtk());
-//                    dto.setDef(monster.getDef());
-//                    dto.setHp(monster.getHp());
-//                    dto.setIsBoss(monster.getIsBoss());
-//                    dto.setLevel(monster.getLevel());
-//                    dto.setMoneyDropFrom(monster.getMoneyDropFrom());
-//                    dto.setMoneyDropTo(monster.getMoneyDropTo());
-//                    dto.setTyLeRoiTien(monster.getTyLeRoiTien());
-//                    dto.setSpeed(monster.getSpeed());
-//                    dto.setSpawnCD(monster.getSpawnCD());
-//                    dto.setId(monster.getId());
-//                    dto.setName(monster.getName());
-//                    dto.setSpawnX(monster.getSpawnX());
-//                    dto.setSpawnY(monster.getSpawnY());
-                    dto.setId(monster.getId());
-                    dto.setCode(monster.getCode());
-                    dto.setName(monster.getName());
-                    dto.setLevel(monster.getLevel());
-                    dto.setHp(monster.getHp());
-                    dto.setAtk(monster.getAtk());
-                    dto.setDef(monster.getDef());
-                    dto.setSpeed(monster.getSpeed());
-                    dto.setMoneyDropTo(monster.getMoneyDropTo());
-                    dto.setMoneyDropFrom(monster.getMoneyDropFrom());
-                    dto.setTyLeRoiTien(monster.getTyLeRoiTien());
-                    dto.setTyLeRoiDo(monster.getTyLeRoiDo());
-                    dto.setColor(monster.getColor());
-                    dto.setSfx_name(monster.getSfx_name());
-                    dto.setSfxCode(monster.getSfxCode());
-                    dto.setSpawnCD(monster.getSpawnCD());
-                    dto.setIsBoss(monster.getIsBoss());
-                    dto.setSpawnX(monster.getSpawnX());
-                    dto.setSpawnY(monster.getSpawnY());
-                    dto.setDropItem(monster.getDropItem());
-                    dto.setDropItems(items);
-                    return dto;
+                    // nhân bản theo count
+                    return IntStream.range(0, sp.getCount())
+                            .mapToObj(i -> monster);
                 })
-                        .
-
-                toList();
+                .toList();
 
         // Trả ra DTO dạng Optional
         return Optional.of(
@@ -160,7 +106,8 @@ public class WorldService implements IGenericService<worldEntity, Integer> {
                         w.getH(),
                         portalDtos,
                         monsters,
-                        npcs
+                        npcs,
+                        0
                 )
         );
     }

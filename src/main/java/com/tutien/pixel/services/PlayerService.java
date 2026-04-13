@@ -49,7 +49,7 @@ public class PlayerService {
                 p.getName(),
                 p.getLinhCan(),
                 canhGioi.getName(),
-                canhGioi.getStt(),
+                p.getTangTuVi(),
                 p.getMaCanhGioi(),
                 p.getHp(),
                 p.getMaxHp(),
@@ -57,7 +57,7 @@ public class PlayerService {
                 p.getMaxMp(),
                 p.getXu(),
                 p.getTuViHienTai(),
-                canhGioi.getTuViTienCap(),
+                p.getTuViLenCap(),
                 p.getX(),
                 p.getY(),
                 p.getPx(),
@@ -87,7 +87,7 @@ public class PlayerService {
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy người chơi với ID: " + id));
 
         // 2. Cập nhật các trường cơ bản
-        existingPlayer.setName(u.getName());
+//        existingPlayer.setName(u.getName());
         existingPlayer.setLinhCan(u.getLinhCan());
         existingPlayer.setTenCanhGioi(u.getTenCanhGioi());
         existingPlayer.setMaCanhGioi(u.getMaCanhGioi());
@@ -100,11 +100,10 @@ public class PlayerService {
         existingPlayer.setMaxMp(u.getMaxMp());
         existingPlayer.setHeal_hp(u.getHeal_hp());
         existingPlayer.setHeal_mp(u.getHeal_mp());
-
+        existingPlayer.setTuViLenCap(u.getTuViLenCap());
         // 4. Cập nhật tài nguyên & kinh nghiệm
         existingPlayer.setXu(u.getXu());
         existingPlayer.setTuViHienTai(u.getTuViHienTai());
-        existingPlayer.setTuViLenCap(u.getTuViLenCap());
 
         // 5. Cập nhật vị trí & Map
         existingPlayer.setX(u.getX());

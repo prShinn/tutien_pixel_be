@@ -14,9 +14,19 @@ public class worldEntity {
     private String tenMap;
     @Column(unique = true)
     private String code;
+    @Lob
     private String jsonMap;
     private int w;
     private int h;
+    private int isDefault;
+
+    public int getIsDefault() {
+        return isDefault;
+    }
+
+    public void setIsDefault(int isDefault) {
+        this.isDefault = isDefault;
+    }
 
     public int getId() {
         return id;

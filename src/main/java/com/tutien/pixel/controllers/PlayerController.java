@@ -25,10 +25,12 @@ public class PlayerController {
     public ResponseEntity<?> get(@PathVariable int id) {
         return ResponseEntity.of(service.get(id));
     }
+
     @GetMapping("/{id}")
     public PlayerDto getById(@PathVariable int id) {
         return service.getPlayerDto(id);
     }
+
     @GetMapping("/by-user/{id}")
     public ResponseEntity<?> getByUser(@PathVariable int id) {
         return ResponseEntity.of(service.getByUser(id));

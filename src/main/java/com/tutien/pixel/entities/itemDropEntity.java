@@ -8,11 +8,11 @@ public class itemDropEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private int id;
-    private int itemCode;
+    private String itemCode;
     private String itemName;
-    private int questCode;
+    private String questCode;
     private String questName;
-    private int monsterCode;
+    private String monsterCode;
     private String monsterName;
     private int tyLe;
 
@@ -24,13 +24,6 @@ public class itemDropEntity {
         this.id = id;
     }
 
-    public int getItemCode() {
-        return itemCode;
-    }
-
-    public void setItemCode(int itemCode) {
-        this.itemCode = itemCode;
-    }
 
     public String getItemName() {
         return itemName;
@@ -40,13 +33,7 @@ public class itemDropEntity {
         this.itemName = itemName;
     }
 
-    public int getQuestCode() {
-        return questCode;
-    }
 
-    public void setQuestCode(int questCode) {
-        this.questCode = questCode;
-    }
 
     public String getQuestName() {
         return questName;
@@ -56,11 +43,27 @@ public class itemDropEntity {
         this.questName = questName;
     }
 
-    public int getMonsterCode() {
+    public String getItemCode() {
+        return itemCode;
+    }
+
+    public void setItemCode(String itemCode) {
+        this.itemCode = itemCode;
+    }
+
+    public String getQuestCode() {
+        return questCode;
+    }
+
+    public void setQuestCode(String questCode) {
+        this.questCode = questCode;
+    }
+
+    public String getMonsterCode() {
         return monsterCode;
     }
 
-    public void setMonsterCode(int monsterCode) {
+    public void setMonsterCode(String monsterCode) {
         this.monsterCode = monsterCode;
     }
 
