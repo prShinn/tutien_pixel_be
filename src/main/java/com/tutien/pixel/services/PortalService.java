@@ -45,9 +45,11 @@ public class PortalService implements IGenericService<portalEntity, Integer> {
     @Override
     public portalEntity save(portalEntity entity) {
         // Đảm bảo quan hệ 2 chiều được thiết lập trước khi lưu
-        portalEntity portalDen = new portalEntity();
         Optional<worldEntity> world = worldService.findByCode(entity.getMapCode());
+
+        portalEntity portalDen = new portalEntity();
         Optional<worldEntity> worldDen = worldService.findByCode(entity.getDenMap());
+
         if (world.isEmpty() && worldDen.isEmpty()) {
             throw new RuntimeException("Thieu du lieu map");
         }
@@ -59,40 +61,59 @@ public class PortalService implements IGenericService<portalEntity, Integer> {
                 case D -> {
                     // cong trong map
                     entity.setX(mapUtils.randInt(world.get().getW() / 3, Math.round(world.get().getW() / 1.5F)));
-                    entity.setY(world.get().getH() - 2);
+                    entity.setY(world.get().getH() - 1);
+                    portalDen.setToX(entity.getX());
+                    portalDen.setToY(entity.getY() - 1);
                     // cong map den
-                    portalDen.setX(mapUtils.randInt(worldDen.get().getW() / 3, Math.round(worldDen.get().getW() / 1.5F)));
                     portalDen.setY(2);
+                    portalDen.setX(mapUtils.randInt(worldDen.get().getW() / 3, Math.round(worldDen.get().getW() / 1.5F)));
                     portalDen.setDir(directEnum.U);
+                    entity.setToX(portalDen.getX());
+                    entity.setToY(portalDen.getY() + 1);
                 }
                 case U -> {
                     entity.setX(mapUtils.randInt(world.get().getW() / 3, Math.round(world.get().getW() / 1.5F)));
-                    entity.setY(2);
+                    entity.setY(1);
+                    portalDen.setToX(entity.getX());
+                    portalDen.setToY(entity.getY() + 1);
                     // cong map den
-                    portalDen.setX(mapUtils.randInt(worldDen.get().getW() / 3, Math.round(worldDen.get().getW() / 1.5F)));
                     portalDen.setY(worldDen.get().getH() - 2);
+                    portalDen.setX(mapUtils.randInt(worldDen.get().getW() / 3, Math.round(worldDen.get().getW() / 1.5F)));
                     portalDen.setDir(directEnum.D);
+                    entity.setToX(portalDen.getX());
+                    entity.setToY(portalDen.getY() - 1);
                 }
                 case L -> {
                     entity.setY(mapUtils.randInt(world.get().getH() / 3, Math.round(world.get().getH() / 1.5F)));
                     entity.setX(2);
+                    portalDen.setToX(entity.getX() + 1);
+                    portalDen.setToY(entity.getY());
                     // cong map den
-                    portalDen.setY(mapUtils.randInt(worldDen.get().getW() / 3, Math.round(worldDen.get().getW() / 1.5F)));
+                    portalDen.setY(mapUtils.randInt(worldDen.get().getH() / 3, Math.round(worldDen.get().getH() / 1.5F)));
                     portalDen.setX(worldDen.get().getW() - 2);
                     portalDen.setDir(directEnum.R);
+                    entity.setToX(portalDen.getX() - 1);
+                    entity.setToY(portalDen.getY());
                 }
                 case R -> {
                     entity.setY(mapUtils.randInt(world.get().getH() / 3, Math.round(world.get().getH() / 1.5F)));
                     entity.setX(world.get().getW() - 2);
+                    portalDen.setToX(entity.getX() - 1);
+                    portalDen.setToY(entity.getY());
                     // cong map den
-                    portalDen.setY(mapUtils.randInt(worldDen.get().getW() / 3, Math.round(worldDen.get().getW() / 1.5F)));
+                    portalDen.setY(mapUtils.randInt(worldDen.get().getH() / 3, Math.round(worldDen.get().getH() / 1.5F)));
                     portalDen.setX(2);
                     portalDen.setDir(directEnum.L);
+                    entity.setToX(portalDen.getX() + 1);
+                    entity.setToY(portalDen.getY());
                 }
             }
-            portalDen.setMapCode(world.get().getCode());
+            portalDen.setMapCode(worldDen.get().getCode());
+            portalDen.setDenMap(world.get().getCode());
             portalDen.setMapName(world.get().getTenMap());
-            portalDen.setCode("to_" + world.get().getCode());
+            portalDen.setCode(worldDen.get().getCode() + "_Den_" + world.get().getCode());
+
+
             entity.setMapName(worldDen.get().getTenMap());
             portalRepository.save(portalDen);
             return portalRepository.save(entity);

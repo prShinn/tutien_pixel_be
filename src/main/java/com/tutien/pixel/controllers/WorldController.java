@@ -36,6 +36,11 @@ public class WorldController {
         return ResponseEntity.ok(worldService.getWorld(code));
     }
 
+    @GetMapping("/default")
+    public ResponseEntity<Optional<worldEntity>> findDefault() throws Exception {
+        return ResponseEntity.ok(worldService.findDefault());
+    }
+
     @PostMapping
     public worldEntity create(@RequestBody worldEntity world) {
         return worldService.save(world);
