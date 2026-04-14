@@ -37,7 +37,6 @@ public class ItemDropService {
         old.setQuestName(e.getQuestName());
         old.setMonsterCode(e.getMonsterCode());
         old.setMonsterName(e.getMonsterName());
-        old.setTyLe(e.getTyLe());
 
         return repo.save(old);
     }

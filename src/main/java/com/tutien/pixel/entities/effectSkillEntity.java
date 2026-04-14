@@ -91,4 +91,20 @@ public class effectSkillEntity {
     public void setGayChoang(int gayChoang) {
         this.gayChoang = gayChoang;
     }
+
+    public String getIcon() {
+        return icon;
+    }
+
+    public void setIcon(String icon) {
+        this.icon = icon;
+    }
+
+    public int getIsBuff() {
+        return isBuff;
+    }
+
+    public void setIsBuff(int isBuff) {
+        this.isBuff = isBuff;
+    }
 }

@@ -74,7 +74,8 @@ public class WorldService implements IGenericService<worldEntity, Integer> {
                         p.getY(),
                         p.getToX(),
                         p.getToY(),
-                        p.getMapCode()
+                        p.getMapCode(),
+                        p.getMapName()
                 ))
                 .toList();
         List<npcEntity> npcs = npcRepo.findByMapCode(code);

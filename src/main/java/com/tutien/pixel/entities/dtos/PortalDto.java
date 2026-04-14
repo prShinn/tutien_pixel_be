@@ -11,8 +11,9 @@ public class PortalDto {
     private int toX;
     private int toY;
     private String mapCode;
+    private String tenMapDen;
 
-    public PortalDto(int id, String denMap, String code, int x, int y, int toX, int toY, String mapCode) {
+    public PortalDto(int id, String denMap, String code, int x, int y, int toX, int toY, String mapCode, String tenMapDen) {
         this.id = id;
         this.denMap = denMap;
         this.code = code;
@@ -21,6 +22,15 @@ public class PortalDto {
         this.toX = toX;
         this.toY = toY;
         this.mapCode = mapCode;
+        this.tenMapDen = tenMapDen;
+    }
+
+    public String getTenMapDen() {
+        return tenMapDen;
+    }
+
+    public void setTenMapDen(String tenMapDen) {
+        this.tenMapDen = tenMapDen;
     }
 
     public int getId() {

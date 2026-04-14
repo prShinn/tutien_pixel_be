@@ -14,26 +14,19 @@ public class itemDropEntity {
     private String questName;
     private String monsterCode;
     private String monsterName;
-    private int tyLe;
-
     public int getId() {
         return id;
     }
-
     public void setId(int id) {
         this.id = id;
     }
 
-
     public String getItemName() {
         return itemName;
     }
-
     public void setItemName(String itemName) {
         this.itemName = itemName;
     }
-
-
 
     public String getQuestName() {
         return questName;
@@ -73,13 +66,5 @@ public class itemDropEntity {
 
     public void setMonsterName(String monsterName) {
         this.monsterName = monsterName;
-    }
-
-    public int getTyLe() {
-        return tyLe;
-    }
-
-    public void setTyLe(int tyLe) {
-        this.tyLe = tyLe;
     }
 }
