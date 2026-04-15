@@ -53,6 +53,9 @@ public class WorldService implements IGenericService<worldEntity, Integer> {
         return worldRepository.findByCode(code);
     }
 
+    public Optional<worldEntity> findDefault() {
+        return worldRepository.findByIsDefault(1);
+    }
     public Optional<WorldDto> getWorld(String code) throws Exception {
 
         Optional<worldEntity> opt = worldRepository.findByCode(code);

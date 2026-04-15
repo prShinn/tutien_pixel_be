@@ -10,5 +10,6 @@ import java.util.Optional;
 public interface WorldRepository extends JpaRepository<worldEntity, Integer> {
     // Tìm kiếm theo code (vì code là unique)
     Optional<worldEntity> findByCode(String code);
+    Optional<worldEntity> findByIsDefault(int i);
 
 }
