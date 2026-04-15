@@ -25,6 +25,11 @@ public class CanhGioiController {
         return ResponseEntity.of(service.get(id));
     }
 
+    @GetMapping("/{stt}")
+    public ResponseEntity<?> getByStt(@PathVariable int stt) {
+        return ResponseEntity.of(service.getByStt(stt));
+    }
+
     @PostMapping
     public canhGioiEntity create(@RequestBody canhGioiEntity e) {
         return service.create(e);

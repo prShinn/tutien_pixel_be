@@ -13,6 +13,7 @@ public class canhGioiEntity {
     private String name;
     private int daiCanhGioi;
     private int tuViTienCap;
+    @Column(unique = true)
     private int stt;
 
     public int getDaiCanhGioi() {

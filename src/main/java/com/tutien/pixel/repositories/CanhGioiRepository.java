@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface CanhGioiRepository extends JpaRepository<canhGioiEntity, Integer> {
@@ -14,4 +15,5 @@ public interface CanhGioiRepository extends JpaRepository<canhGioiEntity, Intege
 
     List<canhGioiEntity> findAllByOrderBySttAsc();
 
+    Optional<canhGioiEntity> findByStt(int stt);
 }

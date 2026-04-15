@@ -22,6 +22,7 @@ public class CanhGioiService {
         return repo.findById(id);
     }
 
+
     public canhGioiEntity create(canhGioiEntity e) {
         return repo.save(e);
     }
@@ -29,6 +30,9 @@ public class CanhGioiService {
     public canhGioiEntity getById(int id) {
         return repo.findById(id)
                 .orElseThrow(() -> new RuntimeException("Not found"));
+    }
+    public Optional<canhGioiEntity> getByStt(int stt) {
+        return repo.findByStt(stt);
     }
 
     public canhGioiEntity update(int id, canhGioiEntity newE) {
