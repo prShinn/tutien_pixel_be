@@ -37,7 +37,7 @@ public class WorldController {
     }
 
     @GetMapping("/default")
-    public ResponseEntity<Optional<worldEntity>> findDefault() throws Exception {
+    public ResponseEntity<Optional<WorldDto>> findDefault() throws Exception {
         return ResponseEntity.ok(worldService.findDefault());
     }
 

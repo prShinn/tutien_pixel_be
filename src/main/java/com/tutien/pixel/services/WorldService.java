@@ -4,6 +4,7 @@ import com.tutien.pixel.entities.*;
 import com.tutien.pixel.entities.dtos.MonsterDto;
 import com.tutien.pixel.entities.dtos.PortalDto;
 import com.tutien.pixel.entities.dtos.WorldDto;
+import com.tutien.pixel.entities.enums.loaiMap;
 import com.tutien.pixel.repositories.*;
 import com.tutien.pixel.repositories.iRepositories.IGenericService;
 import com.tutien.pixel.utils.maps.MapUtils;
@@ -53,8 +54,62 @@ public class WorldService implements IGenericService<worldEntity, Integer> {
         return worldRepository.findByCode(code);
     }
 
-    public Optional<worldEntity> findDefault() {
-        return worldRepository.findByIsDefault(1);
+    public Optional<WorldDto> findDefault() {
+        Optional<worldEntity> opt = worldRepository.findByIsDefault(1);
+        if (opt.isEmpty()) return Optional.empty();
+        worldEntity w = opt.get();
+        // Convert String jsonMap -> int[][]
+        int[][] json = objectMapper.readValue(w.getJsonMap(), int[][].class);
+
+        // Lấy danh sách portal và map sang DTO
+        List<PortalDto> portalDtos = portalRepo.findAllByMapCode(w.getCode())
+                .stream()
+                .map(p -> new PortalDto(
+                        p.getId(),
+                        p.getDenMap(),
+                        p.getCode(),
+                        p.getX(),
+                        p.getY(),
+                        p.getToX(),
+                        p.getToY(),
+                        p.getMapCode(),
+                        p.getMapName()
+                ))
+                .toList();
+        List<npcEntity> npcs = npcRepo.findByMapCode(w.getCode());
+        List<spawnMonsterEntity> spawns = spawnMonsterRepo.findByMapCode(w.getCode());
+
+        List<MonsterDto> monsters = spawns.stream()
+                .flatMap(sp -> {
+                    MonsterDto monster = monsterRepo
+                            .getByCode(String.valueOf(sp.getMonsterCode()));
+
+                    if (monster == null) return Stream.empty();
+
+                    // nhân bản theo count
+                    return IntStream.range(0, sp.getCount())
+                            .mapToObj(i -> monster);
+                })
+                .toList();
+
+        // Trả ra DTO dạng Optional
+        return Optional.of(
+                new
+
+                        WorldDto(
+                        w.getId(),
+                        w.getTenMap(),
+                        w.getCode(),
+                        json,
+                        w.getW(),
+                        w.getH(),
+                        portalDtos,
+                        monsters,
+                        npcs,
+                        0,
+                        w.getLoaiMap()
+                )
+        );
     }
     public Optional<WorldDto> getWorld(String code) throws Exception {
 
@@ -111,7 +166,8 @@ public class WorldService implements IGenericService<worldEntity, Integer> {
                         portalDtos,
                         monsters,
                         npcs,
-                        0
+                        0,
+                        w.getLoaiMap()
                 )
         );
     }
@@ -120,7 +176,7 @@ public class WorldService implements IGenericService<worldEntity, Integer> {
     public worldEntity save(worldEntity entity) {
         // Đảm bảo quan hệ 2 chiều được thiết lập trước khi lưu
         if (entity.getJsonMap() == null || entity.getJsonMap().isEmpty()) {
-            String mapData = objectMapper.writeValueAsString(mapUtils.build(entity.getW(), entity.getH()));
+            String mapData = objectMapper.writeValueAsString(mapUtils.build(entity.getW(), entity.getH(), entity.getLoaiMap()));
             entity.setJsonMap(mapData);
         }
         return worldRepository.save(entity);
@@ -136,7 +192,7 @@ public class WorldService implements IGenericService<worldEntity, Integer> {
             exists.get().setW(newDetails.getW());
             exists.get().setH(newDetails.getH());
             if (newDetails.getJsonMap() == null || newDetails.getJsonMap().isEmpty()) {
-                String mapData = objectMapper.writeValueAsString(mapUtils.build(newDetails.getW(), newDetails.getH()));
+                String mapData = objectMapper.writeValueAsString(mapUtils.build(newDetails.getW(), newDetails.getH(), newDetails.getLoaiMap()));
                 exists.get().setJsonMap(mapData);
             }
             return worldRepository.save(exists.get());

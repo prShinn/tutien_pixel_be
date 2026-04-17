@@ -1,7 +1,9 @@
 package com.tutien.pixel.utils.maps;
 
+import com.tutien.pixel.entities.enums.loaiMap;
 import org.springframework.stereotype.Component;
 
+import java.util.Arrays;
 import java.util.Random;
 
 @Component
@@ -20,56 +22,146 @@ public class MapUtils {
     private Random rand = new Random();
 
 
-    public int[][] build(int w, int h) {
+    public int[][] build(int w, int h, loaiMap type) {
         // Khởi tạo mảng 2 chiều và lấp đầy bằng GRASS
         int[][] tiles = new int[h][w];
+
+        // Base fill
+        int base = (type == loaiMap.NUI_CAO) ? STONE : GRASS;
         for (int i = 0; i < h; i++) {
-            for (int j = 0; j < w; j++) {
-                tiles[i][j] = GRASS;
-            }
+            Arrays.fill(tiles[i], base);
         }
 
         // Tạo tường bao
         borderWall(tiles, WALL);
-
-        // Tạo Lakes (Ao hồ) - 3 lần
-        for (int i = 0; i < 3; i++) {
-            fillRect(tiles, randInt(5, w), randInt(5, h),
-                    randInt(5, w / 10 + 5) / 2,
-                    randInt(5, h / 10 + 10) / 3, WATER);
-        }
-
-        // Tạo Mountains (Núi) - 2 lần
-        for (int i = 0; i < 2; i++) {
-            fillRect(tiles, randInt(5, w), randInt(5, h),
-                    randInt(5, w / 10 + 5) / 2,
-                    randInt(5, h / 10 + 10) / 3, MTN);
-        }
-
-        // Tạo Tree clusters (Cụm cây) - 3 lần
-        for (int i = 0; i < 3; i++) {
-            fillRect(tiles, randInt(5, w), randInt(5, h),
-                    randInt(5, w / 10 + 5) / 2,
-                    randInt(5, h / 10 + 15) / 2, TREE);
-        }
-
-        // Phân tán đá
-
-        scatter(tiles, STONE, randInt(w / 3, h / 3), GRASS);
-        scatter(tiles, FLOOR, randInt(w / 3, h / 3), GRASS);
-
-        // Tạo đường đi (Road)
-        for (int y = 2; y < h - 2; y++) {
-            if (tiles[y][h / 2] == GRASS) {
-                tiles[y][h / 2] = FLOOR;
-            }
-        }
 //
-//        // Phá tường phía Bắc để làm Portal
-//        if (w > 26) {
-//            tiles[0][26] = FLOOR;
-//            tiles[1][26] = FLOOR;
+//        // Tạo Lakes (Ao hồ) - 3 lần
+//        for (int i = 0; i < 3; i++) {
+//            fillRect(tiles, randInt(5, w), randInt(5, h),
+//                    randInt(5, w / 10 + 5) / 2,
+//                    randInt(5, h / 10 + 10) / 3, WATER);
 //        }
+//
+//        // Tạo Mountains (Núi) - 2 lần
+//        for (int i = 0; i < 2; i++) {
+//            fillRect(tiles, randInt(5, w), randInt(5, h),
+//                    randInt(5, w / 10 + 5) / 2,
+//                    randInt(5, h / 10 + 10) / 3, MTN);
+//        }
+//
+//        // Tạo Tree clusters (Cụm cây) - 3 lần
+//        for (int i = 0; i < 3; i++) {
+//            fillRect(tiles, randInt(5, w), randInt(5, h),
+//                    randInt(5, w / 10 + 5) / 2,
+//                    randInt(5, h / 10 + 15) / 2, TREE);
+//        }
+//
+//        // Phân tán đá
+//
+//        scatter(tiles, STONE, randInt(w / 3, h / 3), GRASS);
+//        scatter(tiles, FLOOR, randInt(w / 3, h / 3), GRASS);
+//
+//        // Tạo đường đi (Road)
+//        for (int y = 2; y < h - 2; y++) {
+//            if (tiles[y][h / 2] == GRASS) {
+//                tiles[y][h / 2] = FLOOR;
+//            }
+//        }
+////
+////        // Phá tường phía Bắc để làm Portal
+////        if (w > 26) {
+////            tiles[0][26] = FLOOR;
+////            tiles[1][26] = FLOOR;
+////        }
+        switch (type) {
+            case THANH_TRI: // Thành trì
+                // Sân gạch
+                fillRect(tiles, 3, 3, w - 6, h - 6, FLOOR);
+
+                // Cổng
+                int mid = w / 2;
+                tiles[0][mid] = FLOOR;
+                tiles[1][mid] = FLOOR;
+
+                // Rêu/cỏ xung quanh
+                scatter(tiles, GRASS, (w * h) / 10, FLOOR);
+                break;
+
+            case CAO_NGUYEN: // Cao nguyên
+                // Nhiều cỏ
+                scatter(tiles, TREE, (w * h) / 8, GRASS);
+
+                // Ít đá
+                scatter(tiles, STONE, (w * h) / 20, GRASS);
+                break;
+
+            case NUI_CAO: // Núi cao
+                // Nhiều đá
+                scatter(tiles, STONE, (w * h) / 6, STONE);
+
+                // Ít cây
+                scatter(tiles, TREE, (w * h) / 25, STONE);
+
+                // Một ít cỏ
+                scatter(tiles, GRASS, (w * h) / 30, STONE);
+                break;
+            case NUI_LUA: // 🌋 Núi lửa
+                // nền đá
+                scatter(tiles, MTN, (w * h) / 6, STONE);
+
+                for (int i = 0; i < 3; i++) {
+                    fillRect(tiles,
+                            randInt(2, w - 5),
+                            randInt(2, h - 5),
+                            randInt(2, 6),
+                            randInt(2, 6),
+                            PLAZA);
+                }
+
+                // ít cây
+                scatter(tiles, TREE, (w * h) / 40, STONE);
+                break;
+            case HANG_DONG: // 🕳 Hang động
+                // fill full đá trước
+                for (int i = 0; i < h; i++) Arrays.fill(tiles[i], WALL);
+
+                // đào hang
+                for (int i = 0; i < 6; i++) {
+                    fillRect(tiles,
+                            randInt(2, w - 10),
+                            randInt(2, h - 10),
+                            randInt(4, 10),
+                            randInt(4, 8),
+                            FLOOR);
+                }
+
+                // nối hang (đường)
+                for (int y = 2; y < h - 2; y++) {
+                    tiles[y][w / 2] = FLOOR;
+                }
+                break;
+            case DAM_LAY: // 🐊 Đầm lầy (hang cóc kiểu swamp)
+                // nhiều nước
+                for (int i = 0; i < 5; i++) {
+                    fillRect(tiles,
+                            randInt(2, w - 5),
+                            randInt(2, h - 5),
+                            randInt(3, 7),
+                            randInt(3, 7),
+                            WATER);
+                }
+
+                // cây dày
+                scatter(tiles, TREE, (w * h) / 6, GRASS);
+                break;
+
+            default:
+                // fallback giống logic cũ
+                scatter(tiles, TREE, (w * h) / 10, GRASS);
+                scatter(tiles, STONE, (w * h) / 10, GRASS);
+                break;
+        }
+
 
         return tiles;
     }

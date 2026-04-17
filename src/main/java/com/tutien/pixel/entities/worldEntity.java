@@ -1,5 +1,6 @@
 package com.tutien.pixel.entities;
 
+import com.tutien.pixel.entities.enums.loaiMap;
 import jakarta.persistence.*;
 
 import java.util.ArrayList;
@@ -19,6 +20,16 @@ public class worldEntity {
     private int w;
     private int h;
     private int isDefault;
+    @Enumerated(EnumType.STRING)
+    private loaiMap loaiMap;
+
+    public loaiMap getLoaiMap() {
+        return loaiMap;
+    }
+
+    public void setLoaiMap(loaiMap loaiMap) {
+        this.loaiMap = loaiMap;
+    }
 
     public int getIsDefault() {
         return isDefault;

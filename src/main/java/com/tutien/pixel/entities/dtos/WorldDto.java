@@ -1,7 +1,10 @@
 package com.tutien.pixel.entities.dtos;
 
+import com.tutien.pixel.entities.enums.loaiMap;
 import com.tutien.pixel.entities.monsterEntity;
 import com.tutien.pixel.entities.npcEntity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 
 import java.util.List;
 
@@ -16,7 +19,10 @@ public class WorldDto {
     private List<MonsterDto> monsters;
     private List<npcEntity> npcs;
     private int isDefault;
-    public WorldDto(int id, String tenMap, String code, int[][] jsonMap, int w, int h, List<PortalDto> portals, List<MonsterDto> monsters, List<npcEntity> npcs,int isDefault) {
+    @Enumerated(EnumType.STRING)
+    private loaiMap loaiMap;
+
+    public WorldDto(int id, String tenMap, String code, int[][] jsonMap, int w, int h, List<PortalDto> portals, List<MonsterDto> monsters, List<npcEntity> npcs, int isDefault, loaiMap loaiMap) {
         this.id = id;
         this.tenMap = tenMap;
         this.code = code;
@@ -27,6 +33,15 @@ public class WorldDto {
         this.monsters = monsters;
         this.npcs = npcs;
         this.isDefault = isDefault;
+        this.loaiMap = loaiMap;
+    }
+
+    public loaiMap getLoaiMap() {
+        return loaiMap;
+    }
+
+    public void setLoaiMap(loaiMap loaiMap) {
+        this.loaiMap = loaiMap;
     }
 
     public int getIsDefault() {
