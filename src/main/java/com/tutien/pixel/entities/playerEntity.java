@@ -16,6 +16,7 @@ public class playerEntity {
     @Enumerated(EnumType.STRING)
     private linhCanEnum linhCan;
     private String tenCanhGioi;
+    private int tuViLinhCan;
     private int tangTuVi;
     private String maCanhGioi;
     private int hp;
@@ -270,5 +271,13 @@ public class playerEntity {
 
     public void setJsonIventory(String jsonIventory) {
         this.jsonIventory = jsonIventory;
+    }
+
+    public int getTuViLinhCan() {
+        return tuViLinhCan;
+    }
+
+    public void setTuViLinhCan(int tuViLinhCan) {
+        this.tuViLinhCan = tuViLinhCan;
     }
 }

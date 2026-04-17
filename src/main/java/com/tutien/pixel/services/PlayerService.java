@@ -73,7 +73,8 @@ public class PlayerService {
                 (int) p.getSpeed(),
                 p.getEquip_slot(),
                 skills,
-                canhGioi
+                canhGioi,
+                p.getTuViLinhCan()
         );
     }
 

@@ -45,8 +45,9 @@ public class PlayerDto {
     private String equip_slot;
     private List<skillEntity> skills;
     private canhGioiEntity canhGioi;
+    private int tuViLinhCan;
 
-    public PlayerDto(int id, int userId, statsEmbed stats, String name, linhCanEnum linhCan, String tenCanhGioi, int tangTuVi, String maCanhGioi, int hp, int maxHp, int mp, int maxMp, int xu, int tuViHienTai, int tuViLenCap, int x, int y, int px, int py, String mapCode, trangBiEmbed trangBi, int iventoryIndex, int attackCD, double heal_hp, double heal_mp, String jsonIventory, String crit, int speed, String equip_slot, List<skillEntity> skills, canhGioiEntity canhGioi) {
+    public PlayerDto(int id, int userId, statsEmbed stats, String name, linhCanEnum linhCan, String tenCanhGioi, int tangTuVi, String maCanhGioi, int hp, int maxHp, int mp, int maxMp, int xu, int tuViHienTai, int tuViLenCap, int x, int y, int px, int py, String mapCode, trangBiEmbed trangBi, int iventoryIndex, int attackCD, double heal_hp, double heal_mp, String jsonIventory, String crit, int speed, String equip_slot, List<skillEntity> skills, canhGioiEntity canhGioi, int tuViLinhCan) {
         this.id = id;
         this.userId = userId;
         this.stats = stats;
@@ -78,6 +79,23 @@ public class PlayerDto {
         this.equip_slot = equip_slot;
         this.skills = skills;
         this.canhGioi = canhGioi;
+        this.tuViLinhCan = tuViLinhCan;
+    }
+
+    public String getEquip_slot() {
+        return equip_slot;
+    }
+
+    public void setEquip_slot(String equip_slot) {
+        this.equip_slot = equip_slot;
+    }
+
+    public int getTuViLinhCan() {
+        return tuViLinhCan;
+    }
+
+    public void setTuViLinhCan(int tuViLinhCan) {
+        this.tuViLinhCan = tuViLinhCan;
     }
 
     public int getId() {
