@@ -36,6 +36,7 @@ public class playerEntity {
     private int attackCD;
     private double heal_hp;
     private double heal_mp;
+    @Lob
     private String jsonIventory;
     private String crit;
     private float speed;
