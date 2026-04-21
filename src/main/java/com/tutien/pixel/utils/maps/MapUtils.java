@@ -78,10 +78,10 @@ public class MapUtils {
                 // Sân gạch
                 fillRect(tiles, 3, 3, w - 6, h - 6, FLOOR);
 
-                // Cổng
-                int mid = w / 2;
-                tiles[0][mid] = FLOOR;
-                tiles[1][mid] = FLOOR;
+//                // Cổng
+//                int mid = w / 2;
+//                tiles[0][mid] = FLOOR;
+//                tiles[1][mid] = FLOOR;
 
                 // Rêu/cỏ xung quanh
                 scatter(tiles, GRASS, (w * h) / 10, FLOOR);
