@@ -4,8 +4,10 @@ import com.tutien.pixel.entities.canhGioiEntity;
 import com.tutien.pixel.entities.dtos.PlayerDto;
 import com.tutien.pixel.entities.playerEntity;
 import com.tutien.pixel.entities.skillEntity;
+import com.tutien.pixel.entities.skillPlayerEntity;
 import com.tutien.pixel.repositories.CanhGioiRepository;
 import com.tutien.pixel.repositories.PlayerRepository;
+import com.tutien.pixel.repositories.SkillPlayerRepository;
 import com.tutien.pixel.repositories.SkillRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -20,6 +22,8 @@ public class PlayerService {
     private PlayerRepository repo;
     @Autowired
     private SkillRepository skillRepo;
+    @Autowired
+    private SkillPlayerRepository skillPlayerRepo;
     @Autowired
     private CanhGioiRepository canhGioiRepo;
 
@@ -38,8 +42,11 @@ public class PlayerService {
     public PlayerDto getPlayerDto(int id) {
         playerEntity p = repo.findById(id)
                 .orElseThrow(() -> new RuntimeException("Player not found"));
-
-        List<skillEntity> skills = skillRepo.findByLinhCan(p.getLinhCan());
+        List<skillPlayerEntity> spList = skillPlayerRepo.findByPlayerId(id);
+        List<String> codes = spList.stream()
+                .map(skillPlayerEntity::getSkillCode)
+                .toList();
+        List<skillEntity> skills = skillRepo.findByCodeIn(codes);
         canhGioiEntity canhGioi = canhGioiRepo.findByCode(p.getMaCanhGioi());
 
         return new PlayerDto(

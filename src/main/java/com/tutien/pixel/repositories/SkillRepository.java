@@ -14,4 +14,5 @@ public interface SkillRepository extends JpaRepository<skillEntity, Integer> {
     List<skillEntity> findByType(skillType type);
 
     skillEntity findByCode(String code);
+    List<skillEntity> findByCodeIn(List<String> codes);
 }

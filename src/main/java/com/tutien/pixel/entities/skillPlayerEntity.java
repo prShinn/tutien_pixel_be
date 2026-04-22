@@ -10,7 +10,9 @@ public class skillPlayerEntity {
     private int id;
     @Column(unique = true)
     private String skillCode;
-    private String playerId;
+    private int level;
+    private int playerId;
+    private float rateBuff;
 
     public int getId() {
         return id;
@@ -28,11 +30,27 @@ public class skillPlayerEntity {
         this.skillCode = skillCode;
     }
 
-    public String getPlayerId() {
+    public int getPlayerId() {
         return playerId;
     }
 
-    public void setPlayerId(String playerId) {
+    public void setPlayerId(int playerId) {
         this.playerId = playerId;
+    }
+
+    public int getLevel() {
+        return level;
+    }
+
+    public void setLevel(int level) {
+        this.level = level;
+    }
+
+    public float getRateBuff() {
+        return rateBuff;
+    }
+
+    public void setRateBuff(float rateBuff) {
+        this.rateBuff = rateBuff;
     }
 }
