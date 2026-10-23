@@ -1,0 +1,37 @@
+CREATE DATABASE IF NOT EXISTS tu_tien_pixel CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE tu_tien_pixel;
+
+CREATE TABLE IF NOT EXISTS users (
+  id VARCHAR(64) PRIMARY KEY, username VARCHAR(32) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL, role ENUM('PLAYER', 'GM', 'ADMIN') NOT NULL DEFAULT 'PLAYER',
+  status ENUM('ACTIVE', 'SUSPENDED') NOT NULL DEFAULT 'ACTIVE', created_at DATETIME(3) NOT NULL
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS players (
+  id VARCHAR(64) PRIMARY KEY, user_id VARCHAR(64) NOT NULL UNIQUE, name VARCHAR(24) NOT NULL UNIQUE,
+  realm_code VARCHAR(64) NOT NULL, realm_stage INT NOT NULL DEFAULT 1, tu_vi BIGINT NOT NULL DEFAULT 0,
+  map_code VARCHAR(64) NOT NULL, x INT NOT NULL, y INT NOT NULL, version BIGINT NOT NULL DEFAULT 1,
+  str_stat INT NOT NULL DEFAULT 5, agi_stat INT NOT NULL DEFAULT 5, vit_stat INT NOT NULL DEFAULT 5,
+  ene_stat INT NOT NULL DEFAULT 5, unspent_points INT NOT NULL DEFAULT 0,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  CONSTRAINT fk_players_user FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS wallets (
+  player_id VARCHAR(64) PRIMARY KEY, xu BIGINT NOT NULL DEFAULT 0, linh_thach BIGINT NOT NULL DEFAULT 0,
+  version BIGINT NOT NULL DEFAULT 1, CONSTRAINT fk_wallet_player FOREIGN KEY (player_id) REFERENCES players(id)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS inventory_items (
+  id VARCHAR(64) PRIMARY KEY, player_id VARCHAR(64) NOT NULL, item_code VARCHAR(64) NOT NULL,
+  quantity INT NOT NULL, slot INT NOT NULL, version BIGINT NOT NULL DEFAULT 1,
+  UNIQUE KEY uq_inventory_item (player_id, item_code), CONSTRAINT fk_inventory_player FOREIGN KEY (player_id) REFERENCES players(id)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS currency_ledger (
+  id VARCHAR(64) PRIMARY KEY, player_id VARCHAR(64) NOT NULL, reason VARCHAR(32) NOT NULL,
+  amount BIGINT NOT NULL, balance_after BIGINT NOT NULL, idempotency_key VARCHAR(80) NOT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), UNIQUE KEY uq_ledger_idempotency (player_id, idempotency_key),
+  CONSTRAINT fk_ledger_player FOREIGN KEY (player_id) REFERENCES players(id)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+  user_id VARCHAR(64) NOT NULL, request_id VARCHAR(80) NOT NULL, result_json JSON NOT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), PRIMARY KEY (user_id, request_id),
+  CONSTRAINT fk_idempotency_user FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB;
