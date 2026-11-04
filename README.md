@@ -1,32 +1,34 @@
 # Tu Tien Pixel Backend
 
-Backend modular-monolith cho vertical slice đầu tiên của webgame:
+## Vai trò
 
-`Auth → Player → Wallet/Inventory → Shop → game_command`
+Backend này cung cấp REST và Socket.IO cho frontend tại `D:\Setup\mine\tutien_pixel`. Các đường dẫn và payload được đối chiếu với `public/js/api.js` và call sites hiện có; đổi contract phải cập nhật [FE_INTEGRATION_NOTE.md](docs/FE_INTEGRATION_NOTE.md).
+
+BE đang là modular monolith dùng Node.js 24, Express, Socket.IO và MySQL/InnoDB. Đã có auth với refresh token xoay vòng, player/catalog/world reads, transactional shop, inventory/cultivation, stats/equipment/skills, quest persistence, admin map/content/VFX persistence, và Socket.IO cho join/movement/portal/combat/loot/chat. Realtime presence/quái/drop/buff/cooldown còn single-process; multi-instance cần Redis adapter và shared runtime.
 
 ## Chạy local
 
-```bash
+```powershell
 npm install
-copy .env.example .env
+Copy-Item .env.example .env
 npm start
 ```
 
-Persistence dùng MySQL/InnoDB. Với XAMPP, bật MySQL trên port `3306`, import [schema.sql](schema.sql) bằng phpMyAdmin, rồi cấu hình `.env` theo `.env.example`.
+Import [schema.sql](schema.sql) vào MySQL mới. Với database hiện tại, chạy một lần [migration](migrations/20261104_player_progression.sql) trước khi khởi động. Node 24 được yêu cầu; script `start`/`dev` đọc `.env` bằng runtime option của Node.
 
-## Contract chính
+## API chính
 
-- `GET /api/health`
-- `POST /api/auth/register` `{ username, password }`
-- `POST /api/auth/login` `{ username, password }`
-- `GET /api/player/me` với Bearer token
-- `POST /api/player` `{ name }` với Bearer token
-- `GET /api/catalog/items` 
-- `POST /api/player/shop/buy` `{ requestId, itemCode, quantity }` với Bearer token
-- Socket.IO `game_command` cho `world.join`, `movement.intent`, `world.resync`
+- Auth: register, login, demo (dev only), me.
+- Player: create/load, power, profile name update; stats, shop, inventory, cultivation, skills, equipment.
+- World/catalog: map published và read-only catalog seed.
+- Quest: snapshot, accept, track, claim; reward commit nguyên tử.
+- Admin: map CRUD/validate/publish/portal, content CRUD, skill VFX CRUD; Bearer role hoặc adapter `ADMIN_API_KEY`.
+- Socket.IO: authenticated commands `world.join`, `world.resync`, movement, portal, combat, skill, loot, chat.
 
-## Roadmap tiếp theo
+Chi tiết request, response, auth, error code và boundary ở [API_V1.md](docs/API_V1.md), [SOCKET_V1.md](docs/SOCKET_V1.md), [ERROR_CODES.md](docs/ERROR_CODES.md), [STATE_INVARIANTS.md](docs/STATE_INVARIANTS.md).
 
-1. Refresh-session rotation, RBAC admin, schema validation tập trung.
-2. Redis adapter/dedup/resync runtime và test contract.
-3. Content/admin, quest, combat persistence và observability.
+## Lưu ý tích hợp FE
+
+Mutation cần `requestId` ổn định. FE hiện còn gửi `itemId`/`index` cho shop/use/equipment, gọi breakthrough không có ID và autosave snapshot rộng; xem note phối hợp trước khi bật online mutation. FE cũng cần tích hợp refresh token và reconcile map theo `mapVersion`. Không gửi client snapshot để ghi đè HP, xu, inventory, progression hoặc vị trí.
+
+Vận hành backup/restore và migration rollback ở [OPERATIONS.md](docs/OPERATIONS.md). Runtime yêu cầu Node 24 và MySQL; realtime multi-instance chưa được bật.

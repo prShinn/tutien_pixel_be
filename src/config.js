@@ -1,12 +1,16 @@
 const isProduction = process.env.NODE_ENV === 'production';
 const jwtSecret = process.env.JWT_SECRET || (isProduction ? '' : 'local-only-change-me');
 if (!jwtSecret) throw new Error('JWT_SECRET is required in production');
+const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS || 0);
+if (!Number.isSafeInteger(trustProxyHops) || trustProxyHops < 0 || trustProxyHops > 10) throw new Error('TRUST_PROXY_HOPS must be an integer from 0 to 10');
 
 module.exports = {
   port: Number(process.env.PORT || 3000),
   jwtSecret,
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:4200',
   isProduction,
+  adminApiKey: process.env.ADMIN_API_KEY || '',
+  trustProxyHops,
   db: {
     host: process.env.DB_HOST || '127.0.0.1',
     port: Number(process.env.DB_PORT || 3306),

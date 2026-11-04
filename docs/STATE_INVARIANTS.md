@@ -1,8 +1,19 @@
 # State invariants
 
-- Client input is intent only; wallet price, item definition, player owner and coordinates are server-owned.
-- A user can own at most one player in the current vertical slice.
-- A shop buy must have a valid `requestId`; replaying the same `userId + requestId` returns the original result and does not debit twice.
-- Wallet balance cannot become negative.
-- Password hashes never appear in HTTP or socket responses.
-- MySQL/InnoDB is the source of truth for account, player, wallet, inventory, ledger and idempotency records.
+- Client input is intent only. Wallet, item price/effect, owner, progression, HP/MP, inventory, equipment and coordinates are server-owned.
+- One authenticated account can own at most one player in this slice. Private routes use the JWT subject; body/path `userId` never selects a target account.
+- Character creation accepts name, validated `MALE|FEMALE`, a root from server catalog, and stats meeting creation allocation rules. Server chooses realm, map, spawn, wallet and initial vitals.
+- Player snapshot PUT rejects all fields except `name`; client snapshots cannot overwrite currency, inventory, health, progression or position.
+- Every player mutation requires a stable `requestId`. A retry with the same intent returns its committed result; reusing the key for another intent is rejected.
+- Shop inventory/wallet/ledger changes, inventory use, cultivation, breakthrough, stat allocation, equipment, skills and quest rewards are committed with their idempotency result inside MySQL transactions.
+- Every wallet movement has a currency ledger entry. Progression/equipment/skill/quest state changes have player action ledger entries.
+- Inventory has at most 40 occupied item codes and each stack is at most 99. Equipment slot and skill loadout limits are checked server-side.
+- Breakthrough checks current realm, stage, tu vi, combat power and required pill while holding the player lock; it consumes the pill and applies progression in one transaction.
+- Quest state and revision are persisted per player. Rewards cannot be claimed twice; item capacity is validated before currency/progression changes commit.
+- MySQL/InnoDB is the source of truth for accounts, player state, wallet, inventory, skills, equipment, quests, ledgers and admin overrides.
+- Admin changes persist in MySQL with actor/action audit records. Bearer role checks are supported; `ADMIN_API_KEY` is a compatibility adapter only.
+- Socket commands use authenticated session identity. Map, position, collision, portal destination, target range, damage, MP cost, cooldown, loot ownership and chat limits are checked by BE.
+- Loot claims and quest event progress are idempotent DB mutations. Combat request dedup and realtime room state are process-local; active combat state is not durable across a server restart.
+- Realtime presence, monster HP, ground drops, buffs and cooldowns live in one process. Player position is saved every two seconds and on map transition/disconnect; a multi-instance deployment requires Redis room routing and shared runtime ownership.
+- Password hashes and access tokens never appear in API responses or logs.
+- Refresh tokens are random opaque values; only SHA-256 hashes are stored. Rotation revokes the prior token in the same DB transaction; replay of a revoked token revokes active refresh sessions for that user. Access JWTs expire after 15 minutes.

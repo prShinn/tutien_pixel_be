@@ -1,4 +1,5 @@
 const http = require('node:http');
+const crypto = require('node:crypto');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -7,36 +8,144 @@ const config = require('./config');
 const { createMysqlStore } = require('./store/mysql-store');
 const { createAuth } = require('./auth');
 const { createPlayerService } = require('./player');
-const { DomainError } = require('./domain');
+const { createShopService } = require('./shop');
+const { createAuthRouter } = require('./http/auth-routes');
+const { createPlayerRouter } = require('./http/player-routes');
+const { createShopRouter } = require('./http/shop-routes');
+const { createCatalogRouter } = require('./http/catalog-routes');
+const { errorHandler } = require('./http/error-handler');
+const { attachGameGateway } = require('./realtime/game-gateway');
+const { createGameplayService } = require('./realtime/gameplay-service');
+const { createCatalogService } = require('./catalog/catalog-service');
+const { createWorldService } = require('./world/world-service');
+const { createInventoryService } = require('./inventory/inventory-service');
+const { createCultivationService } = require('./cultivation/cultivation-service');
+const { createInventoryRouter } = require('./http/inventory-routes');
+const { createCultivationRouter } = require('./http/cultivation-routes');
+const { createEquipmentService } = require('./equipment/equipment-service');
+const { createSkillService } = require('./skills/skill-service');
+const { createGameplayMutationRouter } = require('./http/gameplay-mutation-routes');
+const { createQuestService } = require('./quests/quest-service');
+const { createQuestRouter } = require('./http/quest-routes');
+const { createAdminWorldService } = require('./admin/admin-world-service');
+const { createAdminContentService } = require('./admin/admin-content-service');
+const { createSkillVfxService } = require('./admin/skill-vfx-service');
+const { createAdminRouter } = require('./http/admin-routes');
+function mergeContentOverrides(base, overrides, key) {
+  const records = new Map(base.map((record) => [String(key(record)), record]));
+  for (const override of overrides) {
+    if (override.deleted) records.delete(String(override.id));
+    else records.set(String(override.id), override.data);
+  }
+  return [...records.values()];
+}
 
 async function createApp() {
-  const store = createMysqlStore(config.db); await store.init();
+  const store = createMysqlStore(config.db);
+  await store.init();
+
+  const catalog = createCatalogService();
+  const [worldOverrides, itemOverrides, skillOverrides, vfxProfiles] = await Promise.all([
+    store.listAdminWorlds(),
+    store.listAdminContentRecords('items'),
+    store.listAdminContentRecords('skills'),
+    store.listAdminSkillVfx(),
+  ]);
+  catalog.applyAdminCollection('items', mergeContentOverrides(catalog.getAdminCollection('items'), itemOverrides, (item) => item.id));
+  catalog.applyAdminCollection('skills', mergeContentOverrides(catalog.getAdminCollection('skills'), skillOverrides, (skill) => skill.code || skill.id));
+  for (const [skillCode, profile] of Object.entries(vfxProfiles)) catalog.setSkillVfxProfile(skillCode, profile);
+  const world = createWorldService({ overrides: worldOverrides });
   const auth = createAuth({ store, secret: config.jwtSecret });
-  const players = createPlayerService({ store });
+  const players = createPlayerService({ store, catalog, world });
+  const inventory = createInventoryService({ store, catalog, players });
+  const cultivation = createCultivationService({ store, catalog, players, inventory });
+  const equipment = createEquipmentService({ store, catalog, players });
+  const skills = createSkillService({ store, catalog, players });
+  const quests = createQuestService({ store, catalog });
+  const adminWorlds = createAdminWorldService({ store, world });
+  const adminContent = createAdminContentService({ store, catalog, world });
+  const skillVfx = createSkillVfxService({ store, catalog });
+  const shop = createShopService({ store, catalog, players });
   const app = express();
   const server = http.createServer(app);
   const io = new Server(server, { cors: { origin: config.corsOrigin, credentials: true } });
-  app.use(helmet()); app.use(cors({ origin: config.corsOrigin })); app.use(express.json({ limit: '256kb' }));
-  app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'tu-tien-pixel-be', time: new Date().toISOString() }));
-  app.post('/api/auth/register', async (req, res, next) => { try { res.status(201).json(await auth.register(req.body)); } catch (e) { next(e); } });
-  app.post('/api/auth/login', async (req, res, next) => { try { res.json(await auth.login(req.body)); } catch (e) { next(e); } });
-  app.use('/api/player', auth.authenticate);
-  app.get('/api/player/me', (req, res, next) => { try { res.json({ player: players.snapshot(req.auth.sub) }); } catch (e) { next(e); } });
-  app.post('/api/player', async (req, res, next) => { try { res.status(201).json({ player: await players.create(req.auth.sub, req.body) }); } catch (e) { next(e); } });
-  app.get('/api/catalog/items', (_req, res) => res.json({ items: players.catalog }));
-  app.post('/api/player/shop/buy', async (req, res, next) => { try { res.json({ player: await players.buy(req.auth.sub, String(req.body.requestId || ''), req.body.itemCode, req.body.quantity) }); } catch (e) { next(e); } });
-  app.use((error, _req, res, _next) => { const e = error instanceof DomainError ? error : new DomainError('INTERNAL_ERROR', 'Lỗi máy chủ', 500); res.status(e.status).json({ ok: false, error: { code: e.code, message: e.message } }); });
 
-  io.use((socket, next) => { try { socket.auth = require('jsonwebtoken').verify(socket.handshake.auth?.token || '', config.jwtSecret); next(); } catch { next(new Error('UNAUTHORIZED')); } });
-  io.on('connection', (socket) => socket.on('game_command', async (envelope, ack) => {
-    const safeAck = typeof ack === 'function' ? ack : () => {};
-    const requestId = String(envelope?.requestId || '').trim(); const type = String(envelope?.type || '');
-    if (!requestId || !['world.join', 'movement.intent', 'world.resync'].includes(type)) return safeAck({ ok: false, requestId, command: type, error: { code: 'INVALID_COMMAND', message: 'Command không được hỗ trợ' } });
-    if (type === 'movement.intent' && (!Number.isFinite(Number(envelope.payload?.x)) || !Number.isFinite(Number(envelope.payload?.y)))) return safeAck({ ok: false, requestId, command: type, error: { code: 'INVALID_PAYLOAD', message: 'Tọa độ không hợp lệ' } });
-    safeAck({ ok: true, requestId, command: type, serverTime: Date.now(), result: { accepted: true, userId: socket.auth.sub } });
-  }));
-  return { app, server, io };
+  app.set('trust proxy', config.trustProxyHops);
+  app.use(helmet());
+  app.use(cors({ origin: config.corsOrigin }));
+  app.use((req, res, next) => {
+    const provided = req.get('x-request-id');
+    const requestId = typeof provided === 'string' && /^[a-zA-Z0-9_-]{8,80}$/.test(provided)
+      ? provided
+      : `http_${crypto.randomUUID()}`;
+    const startedAt = process.hrtime.bigint();
+    req.requestId = requestId;
+    res.set('X-Request-Id', requestId);
+    res.once('finish', () => {
+      const route = typeof req.route?.path === 'string' ? `${req.baseUrl}${req.route.path}` : req.path;
+      const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+      process.stdout.write(`${JSON.stringify({ level: res.statusCode >= 500 ? 'error' : 'info', event: 'http_request', requestId, method: req.method, route, status: res.statusCode, durationMs: Math.round(durationMs * 100) / 100 })}\n`);
+    });
+    next();
+  });
+  app.use('/api/admin/worlds', express.json({ limit: '8mb' }));
+  app.use(express.json({ limit: '256kb' }));
+  app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'tu-tien-pixel-be', time: new Date().toISOString() }));
+  app.get('/api/health/ready', async (_req, res) => {
+    try {
+      await store.healthCheck();
+      return res.json({ ok: true, dependencies: { mysql: 'ready' } });
+    } catch {
+      return res.status(503).json({ ok: false, dependencies: { mysql: 'unavailable' } });
+    }
+  });
+
+  app.use('/api/auth', createAuthRouter(auth, config));
+  app.use('/api', createCatalogRouter({ auth, catalog, players, world }));
+  app.use('/api', createShopRouter({ auth, shop }));
+  app.use('/api', createInventoryRouter({ auth, inventory }));
+  app.use('/api', createCultivationRouter({ auth, cultivation }));
+  app.use('/api', createGameplayMutationRouter({ auth, equipment, skills }));
+  app.use('/api', createQuestRouter({ auth, quests }));
+  app.use('/api/admin', createAdminRouter({ auth, config, adminWorlds, adminContent, skillVfx }));
+  app.use('/api/player', createPlayerRouter({ auth, players }));
+  app.use('/api', (_req, res) => res.status(404).json({ ok: false, error: 'API không tồn tại', code: 'NOT_FOUND', message: 'API không tồn tại' }));
+  app.use(errorHandler);
+  const gameplay = createGameplayService({ io, auth, players, store, catalog, world, quests });
+  attachGameGateway(io, { auth, gameplay });
+
+  return {
+    app,
+    server,
+    io,
+    store,
+    async close() {
+      gameplay.stop();
+      await new Promise((resolve) => io.close(resolve));
+      await gameplay.drain();
+      await store.close();
+    },
+  };
 }
 
-if (require.main === module) createApp().then(({ server }) => server.listen(config.port, () => console.log(`Tu Tien Pixel BE listening on ${config.port}`)));
+if (require.main === module) {
+  createApp()
+    .then((application) => {
+      application.server.listen(config.port, () => console.log(`Tu Tien Pixel BE listening on ${config.port}`));
+      let shuttingDown = false;
+      const shutdown = async () => {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        try { await application.close(); }
+        catch { process.exitCode = 1; }
+      };
+      process.once('SIGINT', shutdown);
+      process.once('SIGTERM', shutdown);
+    })
+    .catch(() => {
+      console.error('Tu Tien Pixel BE failed to start');
+      process.exitCode = 1;
+    });
+}
+
 module.exports = { createApp };
