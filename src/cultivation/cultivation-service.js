@@ -35,6 +35,7 @@ function createCultivationService({ store, catalog, players, inventory }) {
       major,
       threshold,
       requiredOvr,
+      itemCatalog: catalog.listItems(),
       gain: breakthroughGain(realm, stage, major),
     });
     return { player: players.decorate(mutation.player), result: mutation.result };

@@ -23,6 +23,7 @@ function createInventoryService({ store, catalog, players }) {
       return { kind: 'cultivation', amount };
     }
     if (mode === 'ABSORB') throw new DomainError('ITEM_NOT_ABSORBABLE', 'Chỉ có thể hấp thụ vật phẩm tu vi', 400);
+    if (type === 'BREAKTHROUGH_PILL') throw new DomainError('BREAKTHROUGH_PILL_RESERVED', 'Giữ đan trong túi; đan tự tiêu hao khi phá đại cảnh giới thành công', 409);
     if (type === 'LINDAN') {
       const amount = Math.floor(Number(item.tuViLinhCanVal || 0));
       if (!Number.isSafeInteger(amount) || amount <= 0) throw new DomainError('INVALID_ITEM_EFFECT', 'Giá trị vật phẩm linh căn không hợp lệ', 409);

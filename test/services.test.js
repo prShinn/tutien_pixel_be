@@ -41,7 +41,7 @@ test('breakthrough derives threshold and gains from server realm catalog', async
   const realm = { id: 1, stt: 1, code: 'LUYEN_THE', soTang: 9, danPhaCanh: 'DAN_PHI_THANG' };
   let progression;
   const service = createCultivationService({
-    catalog: { getRealmByCode: () => realm, getRealmByStt: (stt) => stt === 2 ? { id: 2, stt: 2, code: 'KHI_DONG', soTang: 9 } : null },
+    catalog: { listItems: () => [], getRealmByCode: () => realm, getRealmByStt: (stt) => stt === 2 ? { id: 2, stt: 2, code: 'KHI_DONG', soTang: 9 } : null },
     players: {
       snapshot: async () => ({ realmCode: realm.code, realmStage: 1, tuVi: 1000, tuViHienTai: 1000, tuViLinhCan: 0, stats: { str: 5, agi: 5, vit: 5, ene: 5 }, canhGioi: realm, tuViLenCap: 1000 }),
       decorate: (player) => ({ ...player, dto: true }),

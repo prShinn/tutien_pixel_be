@@ -788,7 +788,7 @@ function createMysqlStore(config) {
         if (player.tuVi < progression.threshold) throw new DomainError('INSUFFICIENT_TUVI', 'Tu vi chưa đủ điều kiện đột phá', 409);
         const [equipmentRows] = await connection.execute('SELECT slot, item_code AS itemCode FROM player_equipment WHERE player_id = ?', [player.id]);
         const [learnedRows] = await connection.execute('SELECT skill_code AS skillCode FROM player_skills WHERE player_id = ?', [player.id]);
-        const equipment = Object.fromEntries(equipmentRows.map((row) => [row.slot, itemCatalog.find((item) => item.id === row.itemCode) || null]));
+        const equipment = Object.fromEntries(equipmentRows.map((row) => [row.slot, (progression.itemCatalog || itemCatalog).find((item) => item.id === row.itemCode) || null]));
         const power = combatPower({
           realm: progression.realm.stt,
           canhGioi: progression.realm,

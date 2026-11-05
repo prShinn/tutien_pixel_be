@@ -37,7 +37,7 @@ function createWorldRuntime({ world }) {
       for (const pack of map.monsterSpawns) {
         const definition = definitions.find((entry) => entry.id === pack.templateId || entry.code === pack.templateId)
           || definitions[0] || pack;
-        const count = Math.max(3, Math.min(5, Number(pack.count || 4)));
+        const count = Math.max(String(definition.type || '').toUpperCase() === 'BOSS' ? 1 : 3, Math.min(5, Number(pack.count || 4)));
         const radius = Number(pack.radius || 24);
         const centerX = Number(pack.centerX || map.w / 2);
         const centerY = Number(pack.centerY || map.h / 2);

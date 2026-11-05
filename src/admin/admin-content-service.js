@@ -2,7 +2,7 @@ const { DomainError } = require('../domain');
 const { QUEST_DEFINITIONS } = require('../quests/quest-catalog');
 
 const EDITABLE = new Set(['quests', 'npcs', 'items', 'skills']);
-const READ_ONLY = new Set(['accounts']);
+const READ_ONLY = new Set(['accounts', 'monsters']);
 
 function recordId(collection, record) {
   if (collection === 'skills') return String(record.code || record.id || '');
@@ -12,6 +12,7 @@ function recordId(collection, record) {
 function createAdminContentService({ store, catalog, world }) {
   function baseRecords(collection) {
     if (collection === 'items' || collection === 'skills') return catalog.getAdminCollection(collection);
+    if (collection === 'monsters') return catalog.listMonsters();
     if (collection === 'quests') return QUEST_DEFINITIONS.map((entry) => ({ ...entry }));
     if (collection === 'npcs') return world.listAdminWorlds().flatMap((entry) => entry.npcs || []);
     return [];

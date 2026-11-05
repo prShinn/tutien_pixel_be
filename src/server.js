@@ -46,14 +46,16 @@ async function createApp() {
   await store.init();
 
   const catalog = createCatalogService();
-  const [worldOverrides, itemOverrides, skillOverrides, vfxProfiles] = await Promise.all([
+  const [worldOverrides, itemOverrides, skillOverrides, monsterOverrides, vfxProfiles] = await Promise.all([
     store.listAdminWorlds(),
     store.listAdminContentRecords('items'),
     store.listAdminContentRecords('skills'),
+    store.listAdminContentRecords('monsters'),
     store.listAdminSkillVfx(),
   ]);
   catalog.applyAdminCollection('items', mergeContentOverrides(catalog.getAdminCollection('items'), itemOverrides, (item) => item.id));
   catalog.applyAdminCollection('skills', mergeContentOverrides(catalog.getAdminCollection('skills'), skillOverrides, (skill) => skill.code || skill.id));
+  catalog.applyAdminCollection('monsters', mergeContentOverrides(catalog.getAdminCollection('monsters'), monsterOverrides, (monster) => monster.code || monster.id));
   for (const [skillCode, profile] of Object.entries(vfxProfiles)) catalog.setSkillVfxProfile(skillCode, profile);
   const world = createWorldService({ overrides: worldOverrides });
   const auth = createAuth({ store, secret: config.jwtSecret });

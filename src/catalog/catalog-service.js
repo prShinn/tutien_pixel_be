@@ -6,6 +6,7 @@ const clone = (value) => structuredClone(value);
 function createCatalogService() {
   let items = clone(seed.items);
   let skills = clone(seed.skills);
+  let monsters = clone(seed.monsterDefs || []);
   let skillVfxProfiles = {};
   return {
     listRealms: () => clone(seed.realms),
@@ -17,7 +18,7 @@ function createCatalogService() {
     listItems: () => clone(items),
     getItemByCode: (code) => clone(items.find((item) => item.id === code || item.maDo === code) || null),
     listSkills: () => clone(skills),
-    listMonsters: () => clone(seed.monsterDefs),
+    listMonsters: () => clone(monsters),
     getLootTableById: (id) => clone(seed.lootTables[id] || []),
     getBalance: () => clone(BALANCE),
     getSkillsForPlayer: async (playerService, userId) => {
@@ -29,10 +30,11 @@ function createCatalogService() {
     removeSkillVfxProfile: (skillCode) => { delete skillVfxProfiles[skillCode]; },
     replaceItems: (nextItems) => { items = clone(nextItems); },
     replaceSkills: (nextSkills) => { skills = clone(nextSkills); },
-    getAdminCollection: (collection) => collection === 'items' ? clone(items) : collection === 'skills' ? clone(skills) : [],
+    getAdminCollection: (collection) => collection === 'items' ? clone(items) : collection === 'skills' ? clone(skills) : collection === 'monsters' ? clone(monsters) : [],
     applyAdminCollection(collection, records) {
       if (collection === 'items') items = clone(records);
       if (collection === 'skills') skills = clone(records);
+      if (collection === 'monsters') monsters = clone(records);
     },
     decoratePlayer(player) {
       const inventory = (player.inventory || []).map((entry) => ({
