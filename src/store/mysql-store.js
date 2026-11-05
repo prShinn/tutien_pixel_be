@@ -5,7 +5,7 @@ const { combatPower, deriveStats } = require('../data/balance');
 const { items: itemCatalog } = require('../data/mock-data');
 
 function createMysqlStore(config) {
-  const pool = mysql.createPool({ ...config, timezone: 'Z', waitForConnections: true, queueLimit: 0, decimalNumbers: true });
+  const pool = mysql.createPool({ ...config, timezone: 'Z', waitForConnections: true, queueLimit: config.queueLimit ?? 100, decimalNumbers: true });
   async function init() { const connection = await pool.getConnection(); connection.release(); }
   async function healthCheck() { await pool.query('SELECT 1'); return true; }
   async function findUserByUsername(username) {
@@ -221,7 +221,7 @@ function createMysqlStore(config) {
     );
   }
 
-  async function playerMutation(userId, requestId, intent, action) {
+  async function playerMutation(userId, requestId, intent, action, { includeSnapshot = true, afterState } = {}) {
     return withConnection(async (connection) => {
       await connection.beginTransaction();
       try {
@@ -239,8 +239,11 @@ function createMysqlStore(config) {
         const before = playerState(player);
         const result = await action(connection, player);
         await connection.execute('UPDATE players SET version = version + 1 WHERE id = ?', [player.id]);
-        const updatedPlayer = await snapshotWith(connection, userId);
-        const after = playerState({ ...player, ...(await currentPlayerState(connection, player.id)) });
+        const updatedPlayer = includeSnapshot ? await snapshotWith(connection, userId) : null;
+        const finalState = afterState
+          ? { ...player, ...afterState(result, player) }
+          : { ...player, ...(await currentPlayerState(connection, player.id)) };
+        const after = playerState(finalState);
         await saveAction(connection, player.id, intent.operation, requestId, intent, before, after);
         await connection.execute('INSERT INTO idempotency_keys (user_id, request_id, result_json) VALUES (?, ?, ?)', [userId, requestId, JSON.stringify({ __idempotency: intent, player: updatedPlayer, result })]);
         await connection.commit();
@@ -641,10 +644,11 @@ function createMysqlStore(config) {
     });
   }
 
-  async function savePlayerPosition(userId, mapCode, x, y) {
+  async function savePlayerPosition(userId, mapCode, x, y, { includeSnapshot = true } = {}) {
     return withConnection(async (connection) => {
       const [result] = await connection.execute('UPDATE players SET map_code = ?, x = ?, y = ?, version = version + 1 WHERE user_id = ?', [mapCode, x, y, userId]);
       if (!result.affectedRows) throw new DomainError('PLAYER_NOT_FOUND', 'Chưa tạo nhân vật', 404);
+      if (!includeSnapshot) return { saved: true };
       return snapshotWith(connection, userId);
     });
   }
@@ -657,7 +661,7 @@ function createMysqlStore(config) {
       const mp = Math.max(0, Math.min(player.maxMp, player.mp - intent.mpCost + intent.mp));
       await connection.execute('UPDATE players SET hp = ?, mp = ? WHERE id = ?', [hp, mp, player.id]);
       return { hp, maxHp: player.maxHp, mp, maxMp: player.maxMp };
-    });
+    }, { includeSnapshot: false, afterState: (result) => ({ hp: result.hp, mp: result.mp }) });
   }
 
   async function pickupGroundItem(userId, requestId, dropId, itemCode, quantity) {

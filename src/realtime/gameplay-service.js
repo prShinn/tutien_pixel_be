@@ -10,6 +10,10 @@ const PORTAL_RANGE = 14;
 const BASIC_ATTACK_RANGE = 26;
 const SKILL_RANGE_SCALE = 6;
 const DROP_TTL_MS = 120000;
+const POSITION_PERSIST_INTERVAL_MS = 2000;
+const POSITION_PERSIST_RETRY_BASE_MS = 1000;
+const POSITION_PERSIST_RETRY_MAX_MS = 30000;
+const MONSTER_UPDATE_BATCH_SIZE = 100;
 
 function createGameplayService({ io, auth, players, store, catalog, world, quests }) {
   const runtime = createWorldRuntime({ world });
@@ -17,7 +21,13 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
   const monsterLocks = new Map();
   const pendingOperations = new Set();
   let stopping = false;
+  let lastDropCleanupAt = 0;
   const runtimeTimer = setInterval(() => {
+    const now = Date.now();
+    if (now - lastDropCleanupAt >= 5000) {
+      runtime.cleanupExpiredDrops(now);
+      lastDropCleanupAt = now;
+    }
     for (const change of runtime.refreshAll()) io.to(roomName(change.mapCode)).emit('monster_spawn', { monster: change.monster });
     track(tickMonsters());
   }, 500);
@@ -74,15 +84,24 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
 
   async function persistPosition(session, force = false) {
     const now = Date.now();
-    if (!force && now - session.lastPersistAt < 2000) return;
+    if (!force && now < session.persistRetryAt) return;
+    if (!force && now - session.lastPersistAt < POSITION_PERSIST_INTERVAL_MS) return;
     session.lastPersistAt = now;
     const value = { mapCode: session.mapCode, x: session.x, y: session.y };
     session.persistPromise = track(session.persistPromise
       .catch(() => {})
-      .then(() => store.savePlayerPosition(session.userId, value.mapCode, value.x, value.y)));
-    try { await session.persistPromise; }
+      .then(() => store.savePlayerPosition(session.userId, value.mapCode, value.x, value.y, { includeSnapshot: false })));
+    try {
+      await session.persistPromise;
+      session.persistFailureCount = 0;
+      session.persistRetryAt = 0;
+    }
     catch (error) {
-      session.lastPersistAt = 0;
+      session.persistFailureCount = Math.min(Number(session.persistFailureCount || 0) + 1, 6);
+      const retryMs = Math.min(POSITION_PERSIST_RETRY_MAX_MS,
+        POSITION_PERSIST_RETRY_BASE_MS * (2 ** (session.persistFailureCount - 1)));
+      session.persistRetryAt = Date.now() + retryMs;
+      process.stderr.write(`${JSON.stringify({ level: 'error', event: 'player_position_persist_failed', retryMs })}\n`);
       throw error;
     }
   }
@@ -104,6 +123,7 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
   function emitWorldInit(socket, session, player) {
     const result = worldInit(session, player);
     socket.emit('world_init', result);
+    socket.emit('ground_loot_state', { items: result.groundItems });
     return result;
   }
 
@@ -326,32 +346,38 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
       for (const room of runtime.activeRooms()) {
         const map = world.getByCode(room.mapCode);
         if (!map) continue;
+        const movementUpdates = [];
         for (const monster of room.monsters.values()) {
           if (monster.dead) continue;
-          const candidates = [...room.players.values()]
-            .map((player) => ({ player, distance: Math.hypot(monster.x - player.x, monster.y - player.y) }))
-            .filter(({ distance }) => distance <= Number(monster.aggroRange || 40))
-            .sort((left, right) => left.distance - right.distance);
-          const nearest = candidates[0];
-          if (!nearest || nearest.distance > Number(monster.leashDistance || 72)) {
+          const aggroRange = Number(monster.aggroRange || 40);
+          let nearestPlayer = null;
+          let nearestDistance = Number.POSITIVE_INFINITY;
+          for (const player of room.players.values()) {
+            const distance = Math.hypot(monster.x - player.x, monster.y - player.y);
+            if (distance <= aggroRange && distance < nearestDistance) {
+              nearestPlayer = player;
+              nearestDistance = distance;
+            }
+          }
+          if (!nearestPlayer || nearestDistance > Number(monster.leashDistance || 72)) {
             if (monster.targetId || monster.state !== 'idle') {
               monster.targetId = null;
               monster.state = 'idle';
-              io.to(roomName(room.mapCode)).emit('monster_update', { monsters: [{ ...monster }] });
+              movementUpdates.push({ ...monster });
             }
             continue;
           }
 
-          const target = nearest.player;
+          const target = nearestPlayer;
           monster.targetId = target.socketId;
           const attackRange = 18;
-          if (nearest.distance > attackRange) {
-            const step = Math.min(nearest.distance - attackRange, Math.max(0.2, Number(monster.speed || 1) * 0.5));
-            const nextX = monster.x + ((target.x - monster.x) / nearest.distance) * step;
-            const nextY = monster.y + ((target.y - monster.y) / nearest.distance) * step;
+          if (nearestDistance > attackRange) {
+            const step = Math.min(nearestDistance - attackRange, Math.max(0.2, Number(monster.speed || 1) * 0.5));
+            const nextX = monster.x + ((target.x - monster.x) / nearestDistance) * step;
+            const nextY = monster.y + ((target.y - monster.y) / nearestDistance) * step;
             if (walkable(map, nextX, nextY)) { monster.x = nextX; monster.y = nextY; }
             monster.state = 'chase';
-            io.to(roomName(room.mapCode)).emit('monster_update', { monsters: [{ ...monster }] });
+            movementUpdates.push({ ...monster });
             continue;
           }
           if (monster.nextAttackAt > now) continue;
@@ -364,8 +390,10 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
           const floorHp = Math.floor(Number(target.maxHp || 100) * 0.25);
           const damage = miss ? 0 : Math.min(Math.max(0, Number(target.hp || 0) - floorHp), Math.ceil(mitigateDamage(rawDamage, derived.pDef)));
           try {
-            const mutation = await store.updateVitals(target.userId, `mob_${crypto.randomUUID()}`, 'MONSTER_ATTACK', { hp: -damage });
-            target.hp = Number(mutation.result.hp);
+            if (damage > 0) {
+              const mutation = await store.updateVitals(target.userId, `mob_${crypto.randomUUID()}`, 'MONSTER_ATTACK', { hp: -damage });
+              target.hp = Number(mutation.result.hp);
+            }
             const dto = { ...monster, x: monster.x, y: monster.y, state: 'attack', targetId: target.socketId };
             io.to(roomName(room.mapCode)).emit('monster_update', { monsters: [dto] });
             io.to(roomName(room.mapCode)).emit('player_combat_result', {
@@ -380,6 +408,11 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
           } catch {
             monster.nextAttackAt = Date.now() + 1000;
           }
+        }
+        for (let offset = 0; offset < movementUpdates.length; offset += MONSTER_UPDATE_BATCH_SIZE) {
+          io.to(roomName(room.mapCode)).emit('monster_update', {
+            monsters: movementUpdates.slice(offset, offset + MONSTER_UPDATE_BATCH_SIZE),
+          });
         }
       }
     } finally {

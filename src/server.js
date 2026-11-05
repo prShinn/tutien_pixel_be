@@ -15,6 +15,7 @@ const { createShopRouter } = require('./http/shop-routes');
 const { createCatalogRouter } = require('./http/catalog-routes');
 const { errorHandler } = require('./http/error-handler');
 const { attachGameGateway } = require('./realtime/game-gateway');
+const { attachRedisAdapter } = require('./realtime/redis-adapter');
 const { createGameplayService } = require('./realtime/gameplay-service');
 const { createCatalogService } = require('./catalog/catalog-service');
 const { createWorldService } = require('./world/world-service');
@@ -69,6 +70,9 @@ async function createApp() {
   const app = express();
   const server = http.createServer(app);
   const io = new Server(server, { cors: { origin: config.corsOrigin, credentials: true } });
+  let realtimeAdapter;
+  try { realtimeAdapter = await attachRedisAdapter(io, config.redisUrl); }
+  catch (error) { await store.close(); throw error; }
 
   app.set('trust proxy', config.trustProxyHops);
   app.use(helmet());
@@ -92,12 +96,16 @@ async function createApp() {
   app.use(express.json({ limit: '256kb' }));
   app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'tu-tien-pixel-be', time: new Date().toISOString() }));
   app.get('/api/health/ready', async (_req, res) => {
-    try {
-      await store.healthCheck();
-      return res.json({ ok: true, dependencies: { mysql: 'ready' } });
-    } catch {
-      return res.status(503).json({ ok: false, dependencies: { mysql: 'unavailable' } });
+    let mysqlReady = false;
+    let redisReady = !realtimeAdapter.enabled;
+    try { await store.healthCheck(); mysqlReady = true; } catch { /* readiness reports the failed dependency */ }
+    if (realtimeAdapter.enabled) {
+      try { redisReady = await realtimeAdapter.healthCheck(); } catch { redisReady = false; }
     }
+    const dependencies = { mysql: mysqlReady ? 'ready' : 'unavailable' };
+    if (realtimeAdapter.enabled) dependencies.redis = redisReady ? 'ready' : 'unavailable';
+    if (!mysqlReady || !redisReady) return res.status(503).json({ ok: false, dependencies });
+    return res.json({ ok: true, dependencies });
   });
 
   app.use('/api/auth', createAuthRouter(auth, config));
@@ -107,7 +115,7 @@ async function createApp() {
   app.use('/api', createCultivationRouter({ auth, cultivation }));
   app.use('/api', createGameplayMutationRouter({ auth, equipment, skills }));
   app.use('/api', createQuestRouter({ auth, quests }));
-  app.use('/api/admin', createAdminRouter({ auth, config, adminWorlds, adminContent, skillVfx }));
+  app.use('/api/admin', createAdminRouter({ auth, adminWorlds, adminContent, skillVfx }));
   app.use('/api/player', createPlayerRouter({ auth, players }));
   app.use('/api', (_req, res) => res.status(404).json({ ok: false, error: 'API không tồn tại', code: 'NOT_FOUND', message: 'API không tồn tại' }));
   app.use(errorHandler);
@@ -123,6 +131,7 @@ async function createApp() {
       gameplay.stop();
       await new Promise((resolve) => io.close(resolve));
       await gameplay.drain();
+      await realtimeAdapter.close();
       await store.close();
     },
   };

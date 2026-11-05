@@ -34,6 +34,14 @@ Migration `20261104_player_progression.sql` thêm bảng và cột, đồng th�
 
 ## Runtime boundary
 
-Account, player, wallet/ledger, inventory/equipment/skills, quest, admin override/audit, refresh token, loot claim và idempotency commit trong MySQL. Online presence, quái HP/respawn, ground drops, buffs, cooldowns và combat command cache ở memory process. Hiện chỉ hỗ trợ một BE instance; trước khi chạy nhiều instance cần Redis Socket.IO adapter cùng runtime owner/shared state và test reconnect/duplicate trên nhiều instance.
+Account, player, wallet/ledger, inventory/equipment/skills, quest, admin override/audit, refresh token, loot claim và idempotency commit trong MySQL. Online presence, quái HP/respawn, ground drops, buffs, cooldowns và combat command cache ở memory process. Chưa được chạy nhiều BE instance: Socket.IO adapter chỉ chuyển tiếp room broadcasts, không chia sẻ authoritative monster/drop/combat runtime; cần shared runtime owner/state và kiểm tra reconnect/duplicate liên instance trước khi mở scale-out.
 
-`SIGINT`/`SIGTERM` đóng Socket.IO/HTTP listener và pool MySQL một cách tuần tự. Backup automation, restore drill, centralized metrics/log aggregation và Redis adapter chưa được cấu hình trong repository.
+`SIGINT`/`SIGTERM` đóng Socket.IO/HTTP listener, Redis adapter clients (nếu đã bật) và pool MySQL một cách tuần tự. Có thể bật adapter room-broadcast bằng `REDIS_URL`; cấu hình Redis ACL/TLS trên mạng riêng. Socket.IO polling cần sticky sessions tại load balancer. Adapter không chia sẻ runtime game, vì vậy vẫn giữ một BE instance cho tới khi có world-state owner dùng chung và kiểm tra liên instance.
+
+`ADMIN_API_KEY` không còn được đọc; xóa biến này khỏi secret/environment của BE sau khi cập nhật FE admin sang JWT Bearer. Role `GM`/`ADMIN` do vận hành cấp trong MySQL, không qua đăng ký public.
+
+## Capacity posture
+
+The repository has no published or measured online-player capacity. Keep gameplay on one BE instance while room, monster, cooldown and drop state remain process-local. `DB_POOL_SIZE` controls active MySQL connections per process; `DB_QUEUE_LIMIT` bounds queued DB work (default 100) and overload returns 503 `SERVICE_BUSY`. Tune these only from measurements against the target MySQL host.
+
+The FE sends movement at 20 Hz. Same-map `player_move` broadcasts still fan out to every other socket in that map, so a crowded map can become network-bound even after AI packet batching. Before increasing the supported online count, load-test movement, combat/AI, reconnect and DB saturation while measuring event-loop lag, Socket.IO bytes/events, MySQL pool wait time and p95/p99 command latency. Redis room broadcast alone does not make gameplay multi-instance safe.

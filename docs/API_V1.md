@@ -1,12 +1,12 @@
 # API V1
 
-BE phục vụ FE tại `D:\Setup\mine\tutien_pixel`. Access token là Bearer JWT 15 phút; refresh token ngẫu nhiên 48 byte, lưu dạng hash trong MySQL và xoay vòng sau mỗi lần refresh (30 ngày). Mutation có side effect yêu cầu `requestId`; một lần retry dùng cùng ID và cùng payload, thao tác mới dùng ID mới.
+BE phục vụ FE tại `D:\Setup\mine\tutien_pixel`. Access token là Bearer JWT 15 phút; refresh token ngẫu nhiên 48 byte, lưu dạng hash trong MySQL và xoay vòng sau mỗi lần refresh (30 ngày). Mutation gameplay/economy/quest yêu cầu `requestId`; retry đúng thao tác dùng lại cùng ID và payload, thao tác mới dùng ID mới. Admin resource edits ghi audit và nhận `requestId` tùy chọn.
 
 ## Status và lỗi
 
 - `200`: đọc hoặc mutation hoàn tất; `201`: tạo tài khoản/nhân vật/admin resource hoặc liên kết portal.
-- `400`: DTO/JSON không hợp lệ; `401`: thiếu/sai/hết hạn token; `403`: sai owner/role; `404`: resource không tồn tại; `409`: state/idempotency conflict; `413`: body vượt giới hạn; `429`: giới hạn tần suất; `503`: dependency hoặc content khởi đầu chưa sẵn sàng.
-- REST lỗi có dạng `{ ok:false, error:string, code, details?, requestId? }`. Unexpected 5xx không lộ message nội bộ. Một số endpoint tương thích cũ trả JSON trực tiếp thay vì bọc `ok`.
+- `400`: DTO/JSON không hợp lệ; `401`: thiếu/sai/hết hạn token; `403`: sai owner/role; `404`: resource không tồn tại; `409`: state/idempotency conflict; `413`: body vượt giới hạn; `429`: giới hạn tần suất; `503`: dependency/content khởi đầu chưa sẵn sàng hoặc DB pool queue đầy (`SERVICE_BUSY`).
+- REST lỗi có dạng `{ ok:false, error:string, code, details?, requestId?, message? }`; `message` lặp lại `error` để tiện client mới. Unexpected 5xx không lộ message nội bộ. Một số endpoint tương thích cũ trả JSON trực tiếp thay vì bọc `ok`.
 
 | Endpoint | Success status | Side effect |
 |---|---:|---|
@@ -23,6 +23,23 @@ BE phục vụ FE tại `D:\Setup\mine\tutien_pixel`. Access token là Bearer JW
 Mutation REST thành công luôn trả DTO/snapshot theo dòng endpoint; endpoint tương thích cũ có thể không bọc `ok`. `requestId` mutation được nhận từ body; error handler phản hồi lại cùng ID nếu hợp lệ.
 
 JSON body giới hạn 256 KiB cho API thông thường và 8 MiB cho admin map. Register/login/demo giới hạn 12 request mỗi IP/10 phút; refresh/logout 30 request mỗi IP/10 phút. Khi chạy sau proxy, cấu hình `TRUST_PROXY_HOPS` để rate limit dùng đúng client IP.
+
+## World and catalog DTOs
+
+| Method + path | Auth | Request | Success DTO |
+|---|---|---|---|
+| `GET /api/worlds` | Public | - | `WorldSummary[]` |
+| `GET /api/worlds/default` | Public | - | `WorldDTO` hoặc JSON 404 nếu chưa có map published |
+| `GET /api/worlds/by-code?code=:code` | Public | query `code` | `WorldDTO` hoặc JSON 404 |
+| `GET /api/world-structure` | Public | - | `{ name, description, regions:[{ name, description, maps:[...] }] }` |
+| `GET /api/canh-gioi`, `/api/linh-can`, `/api/items`, `/api/skills`, `/api/monsters` | Public | - | Array trực tiếp |
+| `GET /api/canh-gioi/:id` | Public | path `id` catalog | Realm DTO hoặc JSON 404 |
+| `GET /api/canh-gioi/stt/:stt` | Public | integer stage number | Realm DTO hoặc JSON 404 |
+| `GET /api/skills/catalog` | Bearer | - | `{ skills, learnedSkills, equippedSkills }` |
+| `GET /api/skill-vfx` | Public | - | `{ profiles: Record<skillCode,VfxProfile> }` |
+| `GET /api/balance` | Public | - | Server balance configuration |
+
+`WorldDTO` includes `id/code/status/version/tenMap/w/h/spawnX/spawnY/jsonMap/layers/portals/monsterSpawns/monsters/npcs/rules`. Collision values use `2` for blocked tiles. `WorldSummary` contains map identity, dimensions, region, portal count and monster pack count.
 
 ### Ví dụ lỗi validation
 
@@ -126,16 +143,25 @@ Catalog seed được sao chép trong `src/data`; item/skill overrides và world
 
 | Method | Path | Auth | Success / side effect |
 |---|---|---|---|
-| GET/POST | `/api/admin/worlds` | GM/ADMIN Bearer; optional compatibility key | GET summary array; POST 201 và lưu world DRAFT |
-| GET/PUT/DELETE | `/api/admin/worlds/:code` | GM/ADMIN Bearer; optional compatibility key | Detail/update/delete; ghi version và audit khi thay đổi |
-| GET/POST | `/api/admin/worlds/:code/validate`, `/publish` | GM/ADMIN Bearer; optional compatibility key | Validate không ghi; publish chỉ khi hợp lệ và ghi version/audit |
-| POST/DELETE | `/api/admin/portals/link`, `/api/admin/worlds/:code/portals/:portalId` | GM/ADMIN Bearer; optional compatibility key | Cập nhật map liên quan, ghi version/audit |
-| GET/POST | `/api/admin/content/:collection` | GM/ADMIN Bearer; optional compatibility key | `{ collection, demo, persisted, data[] }`; create trả 201 |
-| PUT/DELETE | `/api/admin/content/:collection/:id` | GM/ADMIN Bearer; optional compatibility key | Persist override/tombstone và audit |
-| GET/POST | `/api/admin/skill-vfx` | GM/ADMIN Bearer; optional compatibility key | List profiles; create trả 201 và audit |
-| PUT/DELETE | `/api/admin/skill-vfx/:skillCode` | GM/ADMIN Bearer; optional compatibility key | Persist profile/delete và audit |
+| GET/POST | `/api/admin/worlds` | GM/ADMIN Bearer | GET summary array; POST 201 và lưu world DRAFT |
+| GET/PUT/DELETE | `/api/admin/worlds/:code` | GM/ADMIN Bearer | Detail/update/delete; ghi version và audit khi thay đổi |
+| GET/POST | `/api/admin/worlds/:code/validate`, `/publish` | GM/ADMIN Bearer | Validate không ghi; publish chỉ khi hợp lệ và ghi version/audit |
+| POST/DELETE | `/api/admin/portals/link`, `/api/admin/worlds/:code/portals/:portalId` | GM/ADMIN Bearer | Cập nhật map liên quan, ghi version/audit |
+| GET/POST | `/api/admin/content/:collection` | GM/ADMIN Bearer | `{ collection, demo, persisted, data[] }`; create trả 201 |
+| PUT/DELETE | `/api/admin/content/:collection/:id` | GM/ADMIN Bearer | Persist override/tombstone và audit |
+| GET/POST | `/api/admin/skill-vfx` | GM/ADMIN Bearer | List profiles; create trả 201 và audit |
+| PUT/DELETE | `/api/admin/skill-vfx/:skillCode` | GM/ADMIN Bearer | Persist profile/delete và audit |
 
-Admin Bearer phải có role `GM` hoặc `ADMIN`. `ADMIN_API_KEY` là adapter migration tùy chọn, không phải cơ chế production cuối cùng. Mỗi ghi admin lưu audit record. Content item/skill được áp dụng vào catalog process hiện tại và nạp lại khi restart.
+Admin endpoints yêu cầu Bearer JWT có role `GM` hoặc `ADMIN`; `x-admin-key` và `ADMIN_API_KEY` không được chấp nhận. Mỗi ghi admin lưu audit record. Content item/skill được áp dụng vào catalog process hiện tại và nạp lại khi restart.
+
+### Admin request DTOs
+
+- `POST /api/admin/worlds`: JSON `WorldDTO` tối thiểu gồm `code`, `w`, `h`, `spawnX`, `spawnY`; có thể kèm `jsonMap`, `layers`, `portals`, `monsterSpawns`, `monsters`, `npcs`, `rules`. Code duy nhất; bản tạo mới mặc định `DRAFT`. `PUT /worlds/:code` nhận các field cần sửa, nhưng `code` bất biến. `POST /worlds/:code/publish` không cần body và chỉ publish khi validation không có lỗi.
+- `POST /api/admin/portals/link`: `{ sourceCode, targetCode, sourceX, sourceY, targetX, targetY, twoWay?, id? }`. Hai map phải khác nhau; tọa độ phải trong map. Response `{ source, reverse, sourceVersion, targetVersion }`.
+- `POST /api/admin/content/:collection`: JSON record có `id` hoặc `code`; collection ghi được là `quests`, `npcs`, `items`, `skills`. `PUT /:collection/:id` nhận record cập nhật và không cho đổi identity; `DELETE` tạo tombstone. `accounts` chỉ đọc.
+- `POST /api/admin/skill-vfx`: `{ skillCode, root, form, label, durationMs, colors:{ main, light, dark, accent } }`; thời lượng 50–30000 ms, màu hex `#RRGGBB`. `PUT /:skillCode` yêu cầu `skillCode` khớp path; `DELETE` xóa profile.
+
+Map/content/VFX updates trả document hoặc `{ demo:false, persisted:true, data }` tương ứng; delete trả `{ demo:false, persisted:true, removed }`. World validation trả `{ valid, errors[], warnings[] }`. Admin update/delete/publish trả JSON và ghi audit version trước/sau. Việc gán role `GM`/`ADMIN` hiện do vận hành cấp trong database; không có API tự nâng quyền.
 
 ## Socket.IO
 

@@ -11,9 +11,11 @@
 - Breakthrough checks current realm, stage, tu vi, combat power and required pill while holding the player lock; it consumes the pill and applies progression in one transaction.
 - Quest state and revision are persisted per player. Rewards cannot be claimed twice; item capacity is validated before currency/progression changes commit.
 - MySQL/InnoDB is the source of truth for accounts, player state, wallet, inventory, skills, equipment, quests, ledgers and admin overrides.
-- Admin changes persist in MySQL with actor/action audit records. Bearer role checks are supported; `ADMIN_API_KEY` is a compatibility adapter only.
+- Admin changes persist in MySQL with actor/action audit records. Admin access requires a Bearer JWT with role `GM` or `ADMIN`; shared static keys are not accepted.
 - Socket commands use authenticated session identity. Map, position, collision, portal destination, target range, damage, MP cost, cooldown, loot ownership and chat limits are checked by BE.
 - Loot claims and quest event progress are idempotent DB mutations. Combat request dedup and realtime room state are process-local; active combat state is not durable across a server restart.
-- Realtime presence, monster HP, ground drops, buffs and cooldowns live in one process. Player position is saved every two seconds and on map transition/disconnect; a multi-instance deployment requires Redis room routing and shared runtime ownership.
+- Realtime presence, monster HP, ground drops, buffs and cooldowns live in one process. Player position is saved every two seconds and on map transition/disconnect; failed writes use bounded backoff. Periodic flush updates only the `players` row and does not reload the full snapshot. A multi-instance deployment still requires shared runtime ownership.
+- Expired ground drops are removed on a server timer. Monster AI picks the nearest player in one pass, and chase/idle updates are batched into bounded `monster_update` packets.
+- MySQL pool wait queues are finite; saturation returns HTTP 503 `SERVICE_BUSY` instead of retaining an unbounded backlog.
 - Password hashes and access tokens never appear in API responses or logs.
 - Refresh tokens are random opaque values; only SHA-256 hashes are stored. Rotation revokes the prior token in the same DB transaction; replay of a revoked token revokes active refresh sessions for that user. Access JWTs expire after 15 minutes.

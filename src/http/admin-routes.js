@@ -1,9 +1,9 @@
 const express = require('express');
 const asyncRoute = require('./async-route');
 
-function createAdminRouter({ auth, config, adminWorlds, adminContent, skillVfx }) {
+function createAdminRouter({ auth, adminWorlds, adminContent, skillVfx }) {
   const router = express.Router();
-  const authorize = require('./admin-auth').createAdminAuth({ auth, apiKey: config.adminApiKey });
+  const authorize = require('./admin-auth').createAdminAuth({ auth });
   router.use(authorize);
 
   router.get('/worlds', (_req, res) => res.json(adminWorlds.list()));

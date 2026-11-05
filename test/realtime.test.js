@@ -144,6 +144,8 @@ test('world.join ignores client map and coordinates; movement clamps speed and s
   assert.equal(joined.result.mapCode, 'field');
   assert.equal(joined.result.player.x, 1.5);
   assert.equal(harness.broadcastEvents.filter((event) => event.name === 'player_join').length, 0);
+  const lootState = socket.events.find((event) => event.name === 'ground_loot_state');
+  assert.deepEqual(lootState.payload.items, []);
 
   await new Promise((resolve) => setTimeout(resolve, 20));
   const fast = await send(harness.gameplay, socket, 'move_req_0001', 'movement.intent', { mapCode: 'field', x: 9, y: 1.5 });
@@ -221,6 +223,10 @@ test('concurrent loot pickup commits once and same request retry returns the cac
   const drop = harness.gameplay.runtime.addDrop('field', {
     kind: 'item', itemCode: 'STONE', item: { id: 'STONE', name: 'Stone' }, count: 2, x: 1.5, y: 1.5, expiresAt: Date.now() + 10000,
   });
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  const refreshedState = await send(harness.gameplay, socket, 'resync_req_02', 'world.resync');
+  assert.equal(refreshedState.result.groundItems[0].id, drop.id);
+  assert.equal(socket.events.filter((event) => event.name === 'ground_loot_state').at(-1).payload.items[0].id, drop.id);
   const attempts = await Promise.allSettled([
     send(harness.gameplay, socket, 'loot_req_001', 'loot.pickup', { itemId: drop.id }),
     send(harness.gameplay, socket, 'loot_req_002', 'loot.pickup', { itemId: drop.id }),

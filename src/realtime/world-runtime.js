@@ -118,6 +118,17 @@ function createWorldRuntime({ world }) {
     return { ...dto, respawnAt: undefined };
   }
 
+  function cleanupExpiredDrops(room, now) {
+    let removed = 0;
+    for (const [id, drop] of room.groundItems) {
+      if (drop.expiresAt <= now) {
+        room.groundItems.delete(id);
+        removed += 1;
+      }
+    }
+    return removed;
+  }
+
   return {
     getRoom: roomFor,
     enter(mapCode, player, socketId) {
@@ -132,6 +143,8 @@ function createWorldRuntime({ world }) {
         movementBudget: 2.2,
         lastMovementAt: Date.now(),
         lastPersistAt: 0,
+        persistRetryAt: 0,
+        persistFailureCount: 0,
         persistPromise: Promise.resolve(),
         cooldowns: player.cooldowns instanceof Map ? player.cooldowns : new Map(),
         buffs: player.buffs && typeof player.buffs === 'object' ? player.buffs : {},
@@ -171,6 +184,11 @@ function createWorldRuntime({ world }) {
       return changes;
     },
     activeRooms() { return [...rooms.values()]; },
+    cleanupExpiredDrops(now = Date.now()) {
+      let removed = 0;
+      for (const room of rooms.values()) removed += cleanupExpiredDrops(room, now);
+      return removed;
+    },
     getMonster(mapCode, monsterId) {
       const room = rooms.get(mapCode);
       if (!room) return null;
@@ -201,8 +219,7 @@ function createWorldRuntime({ world }) {
     listDrops(mapCode) {
       const room = rooms.get(mapCode);
       if (!room) return [];
-      const now = Date.now();
-      for (const [id, drop] of room.groundItems) if (drop.expiresAt <= now) room.groundItems.delete(id);
+      cleanupExpiredDrops(room, Date.now());
       return [...room.groundItems.values()];
     },
   };

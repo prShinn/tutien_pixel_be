@@ -3,13 +3,17 @@ const jwtSecret = process.env.JWT_SECRET || (isProduction ? '' : 'local-only-cha
 if (!jwtSecret) throw new Error('JWT_SECRET is required in production');
 const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS || 0);
 if (!Number.isSafeInteger(trustProxyHops) || trustProxyHops < 0 || trustProxyHops > 10) throw new Error('TRUST_PROXY_HOPS must be an integer from 0 to 10');
+const dbPoolSize = Number(process.env.DB_POOL_SIZE || 10);
+const dbQueueLimit = Number(process.env.DB_QUEUE_LIMIT || 100);
+if (!Number.isSafeInteger(dbPoolSize) || dbPoolSize < 1) throw new Error('DB_POOL_SIZE must be a positive integer');
+if (!Number.isSafeInteger(dbQueueLimit) || dbQueueLimit < 1) throw new Error('DB_QUEUE_LIMIT must be a positive integer');
 
 module.exports = {
-  port: Number(process.env.PORT || 3000),
+  port: Number(process.env.PORT || 3800),
   jwtSecret,
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:4200',
+  redisUrl: process.env.REDIS_URL || '',
   isProduction,
-  adminApiKey: process.env.ADMIN_API_KEY || '',
   trustProxyHops,
   db: {
     host: process.env.DB_HOST || '127.0.0.1',
@@ -17,6 +21,7 @@ module.exports = {
     database: process.env.DB_NAME || 'tu_tien_pixel',
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '',
-    connectionLimit: Number(process.env.DB_POOL_SIZE || 10),
+    connectionLimit: dbPoolSize,
+    queueLimit: dbQueueLimit,
   },
 };

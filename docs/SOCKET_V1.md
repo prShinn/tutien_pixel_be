@@ -49,16 +49,15 @@ Socket.IO namespace `/`, same origin as REST. Handshake auth is `{ token: string
 | `ground_loot_spawn`, `ground_loot_state`, `ground_loot_removed`, `ground_loot_picked` | authoritative room drop lifecycle |
 | `quest_state_update` | same snapshot as `GET /api/quests` |
 | `chat_message`, `server_msg` | chat DTO or `{ text }` |
-| `action_error` | `{ action, error }`, compatibility only |
 
 ## Legacy migration
 
-Legacy inputs `join_world`, `move`, `map_change`, `chat`, `skill_request`, `attack_request`, `pickup_ground_item`, `monster_sync` are not registered by this BE. FE should use `game_command`; sunset old event listeners after both ends have migrated. FE listeners `world_state`, `player_map`, `monster_state_update`, and `monster_death` are not part of this contract.
+Legacy inputs `join_world`, `move`, `map_change`, `chat`, `skill_request`, `attack_request`, `pickup_ground_item`, `monster_sync` are not registered by this BE. FE should use `game_command`; sunset old event listeners after both ends have migrated. FE listeners `world_state`, `player_map`, and `monster_state_update` are not part of this contract. `monster_death` remains emitted for compatibility.
 
 ## Runtime authority and limits
 
 All eight commands above are dispatched to the gameplay service. `world.join`/`world.resync` emit the persisted player and authoritative room snapshot. Movement checks each traversed collision tile and limits speed. `map.change` requires the player within 14 tiles of a published map portal; server ignores destination coordinates and uses the portal destination. Monster IDs/spawn positions match the FE world loader. Attacks validate range/cooldown, use server monster HP and emit hit/death/loot events. Skill costs and monster damage persist as player vital mutations; loot claim and quest progress persist transactionally. Chat is stripped of control characters and limited to 100 characters/750 ms per sender.
 
-Presence, monsters, drops, buffs, cooldowns and combat command replay cache are process-local. Player position flushes every two seconds, and on map change/disconnect. Multi-instance deployment needs a Socket.IO Redis adapter plus shared room ownership/runtime and persistent combat idempotency; this implementation is single-process alpha. Monster HP/drops reset on restart, while committed player vitals, inventory, loot claims and quest state survive.
+Presence, monsters, drops, buffs, cooldowns and combat command replay cache are process-local. Player position flushes every two seconds, and on map change/disconnect; failed writes retry with bounded exponential backoff. `REDIS_URL` can enable the Socket.IO Redis adapter for cross-process room broadcasts, but does not share authoritative runtime state. Multi-instance gameplay remains unsupported until room ownership/runtime and combat idempotency are shared. Monster HP/drops reset on restart, while committed player vitals, inventory, loot claims and quest state survive.
 
 FE may remove listeners for `world_state`, `player_map`, and `monster_state_update`: the server emits `world_init`, `player_join/leave/move`, and `monster_update` instead. `monster_death` remains emitted for compatibility.
