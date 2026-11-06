@@ -70,4 +70,12 @@ function createWorldService({ overrides = [] } = {}) {
   };
 }
 
-module.exports = { createWorldService };
+function isMonsterSpawnTile(map, x, y) {
+  if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= map.w || y >= map.h) return false;
+  const blocked = [2, 3, 5, 6];
+  const ground = map.layers?.ground?.[y]?.[x] ?? map.jsonMap?.[y]?.[x];
+  const object = map.layers?.objects?.[y]?.[x];
+  return ground != null && !blocked.includes(Number(ground)) && !blocked.includes(Number(object));
+}
+
+module.exports = { createWorldService, isMonsterSpawnTile };

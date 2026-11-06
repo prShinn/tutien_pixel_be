@@ -46,16 +46,17 @@ async function createApp() {
   await store.init();
 
   const catalog = createCatalogService();
-  const [worldOverrides, itemOverrides, skillOverrides, monsterOverrides, vfxProfiles] = await Promise.all([
+  const [worldOverrides, itemOverrides, skillOverrides, monsterOverrides, questOverrides, vfxProfiles] = await Promise.all([
     store.listAdminWorlds(),
     store.listAdminContentRecords('items'),
     store.listAdminContentRecords('skills'),
     store.listAdminContentRecords('monsters'),
+    store.listAdminContentRecords('quests'),
     store.listAdminSkillVfx(),
   ]);
-  catalog.applyAdminCollection('items', mergeContentOverrides(catalog.getAdminCollection('items'), itemOverrides, (item) => item.id));
+  for (const record of itemOverrides) catalog.applyAdminRecord('items', record.id, record);
   catalog.applyAdminCollection('skills', mergeContentOverrides(catalog.getAdminCollection('skills'), skillOverrides, (skill) => skill.code || skill.id));
-  catalog.applyAdminCollection('monsters', mergeContentOverrides(catalog.getAdminCollection('monsters'), monsterOverrides, (monster) => monster.code || monster.id));
+  for (const record of monsterOverrides) catalog.applyAdminRecord('monsters', record.id, record);
   for (const [skillCode, profile] of Object.entries(vfxProfiles)) catalog.setSkillVfxProfile(skillCode, profile);
   const world = createWorldService({ overrides: worldOverrides });
   const auth = createAuth({ store, secret: config.jwtSecret });
@@ -64,9 +65,8 @@ async function createApp() {
   const cultivation = createCultivationService({ store, catalog, players, inventory });
   const equipment = createEquipmentService({ store, catalog, players });
   const skills = createSkillService({ store, catalog, players });
-  const quests = createQuestService({ store, catalog });
+  const quests = createQuestService({ store, catalog, initialOverrides: questOverrides });
   const adminWorlds = createAdminWorldService({ store, world });
-  const adminContent = createAdminContentService({ store, catalog, world });
   const skillVfx = createSkillVfxService({ store, catalog });
   const shop = createShopService({ store, catalog, players });
   const app = express();
@@ -111,17 +111,28 @@ async function createApp() {
   });
 
   app.use('/api/auth', createAuthRouter(auth, config));
+  app.use('/api', createAuthRouter(auth, config));
   app.use('/api', createCatalogRouter({ auth, catalog, players, world }));
   app.use('/api', createShopRouter({ auth, shop }));
   app.use('/api', createInventoryRouter({ auth, inventory }));
   app.use('/api', createCultivationRouter({ auth, cultivation }));
   app.use('/api', createGameplayMutationRouter({ auth, equipment, skills }));
   app.use('/api', createQuestRouter({ auth, quests }));
+  const gameplay = createGameplayService({ io, auth, players, store, catalog, world, quests });
+  const adminContent = createAdminContentService({ store, catalog, world, quests, onCatalogChange(collection, id, saved) {
+    gameplay.catalogChanged(collection, id, saved);
+    if (realtimeAdapter.enabled) io.serverSideEmit("admin_catalog_committed", collection, id);
+  } });
+  if (realtimeAdapter.enabled) io.on("admin_catalog_committed", (collection, id) => {
+    if (!["items", "monsters"].includes(collection) || typeof id !== "string") return;
+    void store.getAdminContentRecord(collection, id).then((saved) => {
+      if (saved && catalog.applyAdminRecord(collection, id, saved)) gameplay.catalogChanged(collection, id, saved);
+    }).catch(() => process.stderr.write('{"level":"error","event":"catalog_peer_refresh_failed"}\n'));
+  });
   app.use('/api/admin', createAdminRouter({ auth, adminWorlds, adminContent, skillVfx }));
   app.use('/api/player', createPlayerRouter({ auth, players }));
   app.use('/api', (_req, res) => res.status(404).json({ ok: false, error: 'API không tồn tại', code: 'NOT_FOUND', message: 'API không tồn tại' }));
   app.use(errorHandler);
-  const gameplay = createGameplayService({ io, auth, players, store, catalog, world, quests });
   attachGameGateway(io, { auth, gameplay });
 
   return {

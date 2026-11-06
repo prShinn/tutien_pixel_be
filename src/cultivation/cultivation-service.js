@@ -10,6 +10,8 @@ function createCultivationService({ store, catalog, players, inventory }) {
   async function breakthrough(userId, requestId) {
     validateRequestId(requestId);
     const player = await players.snapshot(userId);
+    const replay = await store.replayBreakthrough(userId, requestId);
+    if (replay) return { player: await players.snapshot(userId), result: replay.result };
     const realm = catalog.getRealmByCode(player.realmCode);
     if (!realm) throw new DomainError('PLAYER_CONTENT_STALE', 'Cảnh giới nhân vật không còn trong catalog', 409);
     const stage = Number(player.realmStage);
@@ -38,7 +40,8 @@ function createCultivationService({ store, catalog, players, inventory }) {
       itemCatalog: catalog.listItems(),
       gain: breakthroughGain(realm, stage, major),
     });
-    return { player: players.decorate(mutation.player), result: mutation.result };
+    const updatedPlayer = mutation.replayed ? await players.snapshot(userId) : players.decorate(mutation.player);
+    return { player: updatedPlayer, result: mutation.result };
   }
 
   return { absorb, breakthrough };

@@ -133,21 +133,56 @@ function createMysqlStore(config) {
     return rows.map((row) => ({ id: row.recordId, data: decodeJson(row.documentJson), deleted: Boolean(row.isDeleted), version: row.version }));
   }
 
+  async function pageAdminCatalog(collection, seeds, { q, ids, limit, offset }) {
+    const sql = [
+      "WITH seed AS (SELECT CONVERT(record_id USING utf8mb4) COLLATE utf8mb4_unicode_ci AS record_id, CONVERT(name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS name, CONVERT(code USING utf8mb4) COLLATE utf8mb4_unicode_ci AS code FROM JSON_TABLE(?, '$[*]' COLUMNS (record_id VARCHAR(96) PATH '$.id', name VARCHAR(512) PATH '$.name', code VARCHAR(96) PATH '$.code')) AS seed_rows),",
+      "effective AS (",
+      " SELECT record_id, JSON_UNQUOTE(COALESCE(JSON_EXTRACT(document_json, '$.tenDo'), JSON_EXTRACT(document_json, '$.name'))) COLLATE utf8mb4_unicode_ci AS name,",
+      " JSON_UNQUOTE(COALESCE(JSON_EXTRACT(document_json, '$.maDo'), JSON_EXTRACT(document_json, '$.code'))) COLLATE utf8mb4_unicode_ci AS code, TRUE AS isOverride",
+      " FROM admin_content_records WHERE collection_name = ? AND is_deleted = FALSE",
+      " UNION ALL SELECT seed.record_id, seed.name, seed.code, FALSE FROM seed",
+      " WHERE NOT EXISTS (SELECT 1 FROM admin_content_records r WHERE r.collection_name = ? AND r.record_id = seed.record_id)",
+      "), filtered AS (SELECT record_id, isOverride FROM effective",
+      " WHERE (? = '' OR LOCATE(LOWER(?), LOWER(CONCAT_WS(' ', record_id, name, code))) > 0)",
+      " AND (? = 0 OR record_id IN (SELECT CONVERT(id USING utf8mb4) COLLATE utf8mb4_unicode_ci FROM JSON_TABLE(?, '$[*]' COLUMNS (id VARCHAR(96) PATH '$')) AS ids)",
+      " OR code IN (SELECT CONVERT(id USING utf8mb4) COLLATE utf8mb4_unicode_ci FROM JSON_TABLE(?, '$[*]' COLUMNS (id VARCHAR(96) PATH '$')) AS codes))),",
+      " paged AS (SELECT record_id, isOverride FROM filtered ORDER BY record_id LIMIT ? OFFSET ?)",
+      " SELECT paged.record_id AS id, r.document_json AS documentJson, totals.total FROM (SELECT COUNT(*) AS total FROM filtered) AS totals",
+      " LEFT JOIN paged ON TRUE LEFT JOIN admin_content_records r ON paged.isOverride AND r.collection_name = ? AND r.record_id = paged.record_id",
+      " ORDER BY paged.record_id",
+    ].join("\n");
+    const idsJson = JSON.stringify(ids);
+    const [rows] = await pool.execute(sql, [JSON.stringify(seeds), collection, collection, q, q, ids.length, idsJson, idsJson, limit, offset, collection]);
+    return { total: Number(rows[0]?.total || 0), rows: rows.filter((row) => row.id !== null).map((row) => ({
+      id: row.id, data: row.documentJson == null ? null : decodeJson(row.documentJson),
+    })) };
+  }
+
+  async function getAdminContentRecord(collection, id) {
+    const [[row]] = await pool.execute("SELECT document_json AS documentJson, is_deleted AS isDeleted, version FROM admin_content_records WHERE collection_name = ? AND record_id = ?", [collection, id]);
+    return row ? { data: decodeJson(row.documentJson), deleted: Boolean(row.isDeleted), version: row.version } : null;
+  }
+
   async function listAdminAccounts() {
     const [rows] = await pool.query('SELECT id, username, role, status, created_at AS createdAt FROM users ORDER BY created_at DESC');
     return rows;
   }
 
-  async function mutateAdminContent(actorId, collection, recordId, document, remove = false, requestId = null) {
+  async function mutateAdminContent(actorId, collection, recordId, document, remove = false, requestId = null, createOnly = false, expectedVersion) {
     return withConnection(async (connection) => {
       await connection.beginTransaction();
       try {
         const [[prior]] = await connection.query('SELECT document_json AS documentJson, is_deleted AS isDeleted, version FROM admin_content_records WHERE collection_name = ? AND record_id = ? FOR UPDATE', [collection, recordId]);
+        if (expectedVersion !== undefined && Number(prior?.version || 0) !== Number(expectedVersion)) {
+          throw new DomainError("CONTENT_CONFLICT", "Bản ghi vừa thay đổi. Tải lại trước khi lưu.", 409);
+        }
+        if (createOnly && prior && !prior.isDeleted) throw new DomainError('CONTENT_EXISTS', 'Bản ghi đã tồn tại', 409);
         const before = prior ? { data: decodeJson(prior.documentJson), deleted: Boolean(prior.isDeleted), version: prior.version } : null;
         const stored = document || (prior ? decodeJson(prior.documentJson) : { id: recordId });
         const version = Number(prior?.version || 0) + 1;
+        const upsert = createOnly && !prior ? '' : ' ON DUPLICATE KEY UPDATE document_json = VALUES(document_json), is_deleted = VALUES(is_deleted), version = VALUES(version), updated_by = VALUES(updated_by)';
         await connection.execute(
-          'INSERT INTO admin_content_records (collection_name, record_id, document_json, is_deleted, version, updated_by) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE document_json = VALUES(document_json), is_deleted = VALUES(is_deleted), version = VALUES(version), updated_by = VALUES(updated_by)',
+          'INSERT INTO admin_content_records (collection_name, record_id, document_json, is_deleted, version, updated_by) VALUES (?, ?, ?, ?, ?, ?)' + upsert,
           [collection, recordId, JSON.stringify(stored), remove ? 1 : 0, version, actorId],
         );
         await writeAudit(connection, actorId, remove ? 'CONTENT_DELETE' : prior ? 'CONTENT_UPDATE' : 'CONTENT_CREATE', `content:${collection}:${recordId}`, before, { data: stored, deleted: remove, version }, requestId);
@@ -278,7 +313,7 @@ function createMysqlStore(config) {
     const [[meta]] = await connection.query('SELECT revision, tracked_id AS trackedId FROM player_quest_meta WHERE player_id = ? LIMIT 1', [playerId]);
     const [states] = await connection.execute('SELECT quest_id AS questId, status, progress FROM player_quests WHERE player_id = ?', [playerId]);
     const { makeSnapshot } = require('../quests/quest-catalog');
-    return makeSnapshot(meta, states);
+    return makeSnapshot(meta, states, definitions);
   }
 
   async function questSnapshot(userId, definitions) {
@@ -766,6 +801,14 @@ function createMysqlStore(config) {
     });
   }
 
+  async function replayBreakthrough(userId, requestId) {
+    const [[row]] = await pool.execute(
+      'SELECT result_json AS resultJson FROM idempotency_keys WHERE user_id = ? AND request_id = ?',
+      [userId, requestId],
+    );
+    return row ? replayMutation(row, { operation: 'BREAKTHROUGH' }) : null;
+  }
+
   async function breakthrough(userId, requestId, progression) {
     return withConnection(async (connection) => {
       await connection.beginTransaction();
@@ -775,12 +818,12 @@ function createMysqlStore(config) {
           [userId],
         );
         if (!player) throw new DomainError('PLAYER_NOT_FOUND', 'Chưa tạo nhân vật', 404);
-        const intent = { operation: 'BREAKTHROUGH', realmCode: progression.realm.code, stage: progression.stage };
+        const intent = { operation: 'BREAKTHROUGH' };
         const [dedup] = await connection.execute('SELECT result_json AS resultJson FROM idempotency_keys WHERE user_id = ? AND request_id = ? FOR UPDATE', [userId, requestId]);
         if (dedup.length) {
           const replay = replayMutation(dedup[0], intent);
           await connection.commit();
-          return replay;
+          return { ...replay, replayed: true };
         }
         if (player.realmCode !== progression.realm.code || player.realmStage !== progression.stage) {
           throw new DomainError('PLAYER_STATE_CHANGED', 'Nhân vật đã thay đổi trạng thái, hãy tải lại rồi thử lại', 409);
@@ -850,7 +893,7 @@ function createMysqlStore(config) {
     });
   }
 
-  return { init, healthCheck, findUserByUsername, findUserById, insertUser, saveRefreshToken, rotateRefreshToken, revokeRefreshToken, playerSnapshot, createPlayer, buyItem, sellItem, useInventoryItem, allocateStats, updatePlayerName, savePlayerPosition, updateVitals, pickupGroundItem, equipItem, unequipItem, learnSkill, equipSkills, breakthrough, questSnapshot, questAction, applyQuestEvent, listAdminWorlds, saveAdminWorlds, deleteAdminWorld, listAdminContentRecords, listAdminAccounts, mutateAdminContent, listAdminSkillVfx, mutateSkillVfx, close: () => pool.end() };
+  return { init, healthCheck, findUserByUsername, findUserById, insertUser, saveRefreshToken, rotateRefreshToken, revokeRefreshToken, playerSnapshot, createPlayer, buyItem, sellItem, useInventoryItem, allocateStats, updatePlayerName, savePlayerPosition, updateVitals, pickupGroundItem, equipItem, unequipItem, learnSkill, equipSkills, replayBreakthrough, breakthrough, questSnapshot, questAction, applyQuestEvent, listAdminWorlds, saveAdminWorlds, deleteAdminWorld, listAdminContentRecords, pageAdminCatalog, getAdminContentRecord, listAdminAccounts, mutateAdminContent, listAdminSkillVfx, mutateSkillVfx, close: () => pool.end() };
 }
 
 module.exports = { createMysqlStore };

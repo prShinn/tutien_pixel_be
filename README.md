@@ -14,6 +14,8 @@ Copy-Item .env.example .env
 npm start
 ```
 
+FE local mặc định kết nối BE ở `http://localhost:3800`. `CORS_ORIGIN` nhận một origin hoặc danh sách cách nhau bằng dấu phẩy. Cấu hình mẫu cho phép các cổng FE local 3000, 3001 và 4200.
+
 BE lắng nghe tại `http://localhost:3800` theo mặc định; có thể đổi bằng biến môi trường `PORT`. Import [schema.sql](schema.sql) vào MySQL mới. Với database hiện tại, chạy một lần [migration](migrations/20261104_player_progression.sql) trước khi khởi động. Node 24 được yêu cầu; script `start`/`dev` đọc `.env` bằng runtime option của Node.
 
 ## API chính
@@ -29,6 +31,6 @@ Chi tiết request, response, auth, error code và boundary ở [API_V1.md](docs
 
 ## Lưu ý tích hợp FE
 
-Mutation cần `requestId` ổn định. FE hiện còn gửi `itemId`/`index` cho shop/use/equipment, gọi breakthrough không có ID và autosave snapshot rộng; xem note phối hợp trước khi bật online mutation. FE cũng cần tích hợp refresh token và reconcile map theo `mapVersion`. Không gửi client snapshot để ghi đè HP, xu, inventory, progression hoặc vị trí.
+FE gửi `requestId` ổn định cho các mutation REST và giữ lại ID khi retry sau lỗi mạng. Các command realtime mang `requestId` riêng trong envelope. Với đột phá, BE trả lại kết quả đã lưu và snapshot hiện tại nếu client gửi lại cùng ID. Snapshot nhân vật và kết quả combat do BE quyết định.
 
 Vận hành backup/restore và migration rollback ở [OPERATIONS.md](docs/OPERATIONS.md). Runtime yêu cầu Node 24 và MySQL; realtime multi-instance chưa được bật.

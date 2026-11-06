@@ -1,5 +1,6 @@
 const crypto = require('node:crypto');
 const { DomainError } = require('../domain');
+const { isMonsterSpawnTile } = require('../world/world-service');
 
 function clone(value) { return structuredClone(value); }
 
@@ -42,6 +43,35 @@ function validateWorld(world, allWorlds) {
       errors.push(`điểm đến portal ${portal.id || ''} nằm ngoài bản đồ đích`);
     } else if (Array.isArray(target.jsonMap) && target.jsonMap[Number(portal.toY)]?.[Number(portal.toX)] === 2) {
       errors.push(`điểm đến portal ${portal.id || ''} nằm trên ô bị chặn`);
+    }
+  }
+  for (const npc of world.npcs || []) {
+    if (!npc || typeof npc.id !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(npc.id)
+        || !String(npc.name || '').trim() || !String(npc.role || '').trim()
+        || !['dialog', 'shop', 'chest'].includes(npc.type)
+        || !Number.isInteger(npc.x) || !Number.isInteger(npc.y)
+        || !isMonsterSpawnTile(world, npc.x, npc.y)
+        || (npc.enabled != null && typeof npc.enabled !== 'boolean')) {
+      errors.push('NPC cần mã, tên, vai trò, kiểu tương tác và vị trí hợp lệ');
+    }
+  }
+  if (world.rules?.monsterPacksOnly && !world.rules.noMonsters && world.type !== 'CITY') {
+    const packs = world.monsterSpawns;
+    const definitions = Array.isArray(world.monsters) ? world.monsters : [];
+    const seen = new Set();
+    if (!Array.isArray(packs)) errors.push('monsterSpawns phải là danh sách bãi quái');
+    else for (const pack of packs) {
+      if (!pack || typeof pack.packId !== 'string' || !pack.packId || seen.has(pack.packId)
+          || !definitions.some((entry) => entry && (entry.id === pack.templateId || entry.code === pack.templateId))) {
+        errors.push('Bãi quái cần mã riêng và một mẫu quái hợp lệ');
+        continue;
+      }
+      seen.add(pack.packId);
+      if (!Number.isInteger(pack.count) || pack.count < 1 || pack.count > 20
+          || !Number.isInteger(pack.radius) || pack.radius < 1 || pack.radius > 80
+          || !isMonsterSpawnTile(world, pack.centerX, pack.centerY)) {
+        errors.push('Bãi ' + pack.packId + ' cần tâm trên ô đi được, 1–20 quái và bán kính 1–80 ô');
+      }
     }
   }
   return { valid: errors.length === 0, errors, warnings };

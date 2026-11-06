@@ -16,7 +16,7 @@ function createAdminRouter({ auth, adminWorlds, adminContent, skillVfx }) {
   router.post('/portals/link', asyncRoute(async (req, res) => res.status(201).json(await adminWorlds.linkPortal(req.body, req.auth.sub, req))));
   router.delete('/worlds/:code/portals/:portalId', asyncRoute(async (req, res) => res.json(await adminWorlds.deletePortal(req.params.code, req.params.portalId, req.auth.sub, req))));
 
-  router.get('/content/:collection', asyncRoute(async (req, res) => res.json(await adminContent.list(req.params.collection))));
+  router.get('/content/:collection', asyncRoute(async (req, res) => res.json(await adminContent.list(req.params.collection, req.query))));
   router.post('/content/:collection', asyncRoute(async (req, res) => res.status(201).json(await adminContent.create(req.params.collection, req.body, req.auth.sub, req.requestId || req.get('x-request-id')))));
   router.put('/content/:collection/:id', asyncRoute(async (req, res) => res.json(await adminContent.update(req.params.collection, req.params.id, req.body, req.auth.sub, req.requestId || req.get('x-request-id')))));
   router.delete('/content/:collection/:id', asyncRoute(async (req, res) => res.json(await adminContent.remove(req.params.collection, req.params.id, req.auth.sub, req.requestId || req.get('x-request-id')))));

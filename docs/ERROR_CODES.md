@@ -23,4 +23,4 @@ All REST errors are JSON `{ ok:false, error:string, code, details?, requestId? }
 - `INVALID_VFX_PROFILE`, `SKILL_CODE_MISMATCH`, `SKILL_VFX_NOT_FOUND`: skill VFX edit failed.
 - `INVALID_COMMAND`, `INVALID_PAYLOAD`, `INVALID_POSITION`, `INVALID_MAP_CODE`, `INVALID_TARGET`, `INVALID_DROP_ID`, `INVALID_CHAT_MESSAGE`, `WORLD_NOT_JOINED`, `COMMAND_RATE_LIMITED`: socket command schema, world session or rate limit failed.
 - `WORLD_NO_WALKABLE_SPAWN`, `PORTAL_NOT_FOUND_OR_OUT_OF_RANGE`, `PORTAL_DESTINATION_BLOCKED`, `TARGET_NOT_FOUND`, `TARGET_OUT_OF_RANGE`, `COOLDOWN_ACTIVE`, `SKILL_NOT_EQUIPPED`, `SKILL_REQUIRES_TARGET`, `SKILL_REQUIRES_NO_TARGET`, `INSUFFICIENT_MP`, `LOOT_NOT_FOUND`, `LOOT_OUT_OF_RANGE`, `LOOT_ALREADY_CLAIMED`, `CHAT_RATE_LIMITED`: authoritative realtime gameplay precondition failed.
-- `INVALID_JSON`, `PAYLOAD_TOO_LARGE`, `NOT_FOUND`, `INTERNAL_ERROR`: malformed JSON, oversized body, missing route/resource or unexpected server failure.
+- `INVALID_JSON`, `PAYLOAD_TOO_LARGE`, `NOT_FOUND`, `METHOD_NOT_ALLOWED`, `INTERNAL_ERROR`: malformed JSON, oversized body, missing route/resource, unsupported HTTP method or unexpected server failure.

@@ -28,11 +28,11 @@ const QUEST_DEFINITIONS = Object.freeze([
   },
 ]);
 
-function makeSnapshot(meta, states) {
+function makeSnapshot(meta, states, definitions = QUEST_DEFINITIONS) {
   return {
     revision: Number(meta?.revision || 0),
     trackedId: meta?.trackedId || null,
-    quests: QUEST_DEFINITIONS.map((definition) => {
+    quests: definitions.map((definition) => {
       const state = states.find((entry) => entry.questId === definition.id);
       return {
         id: definition.id,

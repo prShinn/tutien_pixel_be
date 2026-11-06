@@ -7,6 +7,8 @@ function createCatalogService() {
   let items = clone(seed.items);
   let skills = clone(seed.skills);
   let monsters = clone(seed.monsterDefs || []);
+  let monsterRevision = 0;
+  const recordVersions = new Map();
   let skillVfxProfiles = {};
   return {
     listRealms: () => clone(seed.realms),
@@ -19,6 +21,7 @@ function createCatalogService() {
     getItemByCode: (code) => clone(items.find((item) => item.id === code || item.maDo === code) || null),
     listSkills: () => clone(skills),
     listMonsters: () => clone(monsters),
+    getMonsterRevision: () => monsterRevision,
     getLootTableById: (id) => clone(seed.lootTables[id] || []),
     getBalance: () => clone(BALANCE),
     getSkillsForPlayer: async (playerService, userId) => {
@@ -31,10 +34,23 @@ function createCatalogService() {
     replaceItems: (nextItems) => { items = clone(nextItems); },
     replaceSkills: (nextSkills) => { skills = clone(nextSkills); },
     getAdminCollection: (collection) => collection === 'items' ? clone(items) : collection === 'skills' ? clone(skills) : collection === 'monsters' ? clone(monsters) : [],
+    applyAdminRecord(collection, id, { data, deleted, version }) {
+      const key = collection + ":" + id;
+      if (Number(version) <= (recordVersions.get(key) || 0)) return false;
+      const records = collection === "items" ? items : monsters;
+      const index = records.findIndex((record) => String(record.id || record.code || record.maDo) === id);
+      if (deleted) {
+        if (index !== -1) records.splice(index, 1);
+      } else if (index === -1) records.push(clone(data));
+      else records[index] = clone(data);
+      recordVersions.set(key, Number(version));
+      if (collection === "monsters") monsterRevision += 1;
+      return true;
+    },
     applyAdminCollection(collection, records) {
       if (collection === 'items') items = clone(records);
       if (collection === 'skills') skills = clone(records);
-      if (collection === 'monsters') monsters = clone(records);
+      if (collection === 'monsters') { monsters = clone(records); monsterRevision += 1; }
     },
     decoratePlayer(player) {
       const inventory = (player.inventory || []).map((entry) => ({

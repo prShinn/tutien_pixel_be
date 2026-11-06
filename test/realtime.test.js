@@ -107,9 +107,13 @@ function makeHarness({ player = makePlayer(), maps, skills = [], lootTables = {}
     async snapshot() { return structuredClone(current); },
     decorate(value) { return structuredClone(value); },
   };
+  let monsterCatalog = [];
+  let monsterCatalogRevision = 0;
   const catalog = {
     listItems: () => structuredClone(items),
     listSkills: () => structuredClone(skills),
+    listMonsters: () => structuredClone(monsterCatalog),
+    getMonsterRevision: () => monsterCatalogRevision,
     getLootTableById: (id) => structuredClone(lootTables[id] || []),
   };
   const quests = { async applyEvent() { return { changed: false, revision: 0, quests: [] }; } };
@@ -118,7 +122,8 @@ function makeHarness({ player = makePlayer(), maps, skills = [], lootTables = {}
     getDefault: () => [...mapsByCode.values()][0] || null,
   };
   const gameplay = createGameplayService({ io, auth: {}, players, store, catalog, world, quests });
-  return { gameplay, io, store, current, players, mapsByCode, broadcastEvents, quests };
+  return { gameplay, io, store, current, players, mapsByCode, broadcastEvents, quests,
+    setMonsterCatalog(records) { monsterCatalog = structuredClone(records); monsterCatalogRevision += 1; } };
 }
 
 async function send(gameplay, socket, requestId, type, payload = {}) {
@@ -134,6 +139,52 @@ test('runtime creates FE-compatible monster ids and honors spawn pack coordinate
   const monsters = runtime.listMonsters('field');
   assert.deepEqual(monsters.map((monster) => monster.id), ['PACK_WOLF_0', 'PACK_WOLF_1', 'PACK_WOLF_2']);
   assert.ok(monsters.every((monster) => monster.templateId === 'WOLF' && monster.maxHp === 20));
+});
+
+test('configured monster packs use exact counts, safe tiles and an explicit empty list', () => {
+  const map = makeMap('field', {
+    monsterSpawns: [
+      { packId: 'PACK_ONE', templateId: 'WOLF', centerX: 0, centerY: 1, count: 1, radius: 20 },
+      { packId: 'PACK_MANY', templateId: 'WOLF', centerX: 1, centerY: 1, count: 8, radius: 20 },
+    ],
+    monsters: [{ id: 'WOLF', code: 'WOLF', hp: 20, img: 'wolf.png' }],
+  });
+  map.rules = { monsterPacksOnly: true };
+  map.jsonMap[1][2] = 2;
+  const runtime = createWorldRuntime({ world: { getByCode: () => map } });
+  const monsters = runtime.listMonsters('field');
+  assert.equal(monsters.length, 9);
+  assert.equal(monsters[0].packCenterX, 0);
+  assert.ok(monsters.every(({ x, y, img }) => img === 'wolf.png' && map.jsonMap[y]?.[x] === 0));
+  map.monsterSpawns = [];
+  map.version++;
+  assert.deepEqual(runtime.listMonsters('field'), []);
+});
+
+test('admin monster edits update live entities without resetting health or position', async () => {
+  const field = makeMap('field', {
+    monsters: [{ id: 'WOLF', code: 'WOLF', name: 'Sói cũ', hp: 100, maxHp: 100, atk: 5, def: 1, speed: 1, img: 'wolf-old.png' }],
+    monsterSpawns: [{ packId: 'PACK_WOLF', templateId: 'WOLF', centerX: 5, centerY: 5, count: 1, radius: 2 }],
+  });
+  field.rules = { monsterPacksOnly: true };
+  const harness = makeHarness({ maps: [['field', field]] });
+  harness.gameplay.runtime.listMonsters('field');
+  const monster = harness.gameplay.runtime.getMonster('field', 'PACK_WOLF_0');
+  const originalPosition = { x: monster.x, y: monster.y };
+  harness.gameplay.runtime.damageMonster('field', monster.id, 30);
+  harness.setMonsterCatalog([{ id: 'WOLF', code: 'WOLF', name: 'Sói mới', hp: 200, maxHp: 200, atk: 20, def: 4, speed: 1.5, img: 'wolf-new.png' }]);
+
+  await new Promise((resolve) => setTimeout(resolve, 560));
+
+  const updated = harness.gameplay.runtime.getMonster('field', monster.id);
+  assert.equal(updated.name, 'Sói mới');
+  assert.equal(updated.img, 'wolf-new.png');
+  assert.equal(updated.maxHp, 200);
+  assert.equal(updated.hp, 140, 'current health ratio should be retained');
+  assert.deepEqual({ x: updated.x, y: updated.y }, originalPosition);
+  assert.notEqual(updated.state, 'dead', 'a catalog refresh must preserve the monster life state');
+  assert.ok(harness.broadcastEvents.some((event) => event.name === 'monster_update' && event.payload.monsters[0].img === 'wolf-new.png'));
+  harness.gameplay.close();
 });
 
 test('world.join ignores client map and coordinates; movement clamps speed and stops at water', async () => {
@@ -201,6 +252,49 @@ test('combat attack damages authoritative monster and emits FE combat/death even
   assert.ok(harness.broadcastEvents.some((event) => event.name === 'combat_result'));
   assert.ok(harness.broadcastEvents.some((event) => event.name === 'monster_death'));
   harness.gameplay.close();
+});
+
+test('area attack keeps its request ID across another command and spends MP once', async (t) => {
+  const skill = { code: 'AREA', name: 'Area', linhCan: 'KIM', satThuong: 1, dienRong: 2, range: 5, effect: 'slow', effectVal: 25, thoiGianBuff: 4, mpTieuHao: 5, hoiChieu: 2 };
+  const field = makeMap('field', {
+    monsters: [{ id: 'MOB', code: 'MOB', name: 'Mob', hp: 1000, maxHp: 1000, def: 0, atk: 1, speed: 0.5 }],
+    monsterSpawns: [{ packId: 'PACK_MOB', templateId: 'MOB', centerX: 2, centerY: 1, count: 3, radius: 1, aggroRange: 1 }],
+  });
+  const harness = makeHarness({
+    maps: [['field', field]],
+    player: makePlayer({ learnedSkills: ['AREA'], equippedSkills: ['AREA'] }),
+    skills: [skill],
+  });
+  t.after(() => harness.gameplay.close());
+  const socket = fakeSocket();
+  await send(harness.gameplay, socket, 'join_area_req', 'world.join');
+  const snapshot = harness.players.snapshot;
+  let snapshotStarted;
+  let resumeSnapshot;
+  const started = new Promise((resolve) => { snapshotStarted = resolve; });
+  const resume = new Promise((resolve) => { resumeSnapshot = resolve; });
+  harness.players.snapshot = async () => {
+    snapshotStarted();
+    await resume;
+    return snapshot();
+  };
+
+  const payload = { targetId: 'PACK_MOB_0', mapCode: 'field', skillCode: 'AREA' };
+  const attack = send(harness.gameplay, socket, 'area_attack_req', 'combat.attack', payload);
+  await started;
+  try {
+    await send(harness.gameplay, socket, 'chat_during_attack', 'chat.send', { message: 'ready' });
+  } finally {
+    resumeSnapshot();
+  }
+  const response = await attack;
+  assert.equal(response.result.hits.length, 3);
+  assert.equal(response.result.mp, 45);
+  assert.ok(harness.store.vitals.has('user_test:area_attack_req'));
+  assert.equal(harness.store.vitals.size, 1);
+  const replay = await send(harness.gameplay, socket, 'area_attack_req', 'combat.attack', payload);
+  assert.deepEqual(replay, response);
+  assert.equal(harness.store.vitals.size, 1);
 });
 
 test('skill cast enforces loadout and persists MP/effect before success', async () => {

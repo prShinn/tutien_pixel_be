@@ -5,7 +5,7 @@ BE phục vụ FE tại `D:\Setup\mine\tutien_pixel`. Access token là Bearer JW
 ## Status và lỗi
 
 - `200`: đọc hoặc mutation hoàn tất; `201`: tạo tài khoản/nhân vật/admin resource hoặc liên kết portal.
-- `400`: DTO/JSON không hợp lệ; `401`: thiếu/sai/hết hạn token; `403`: sai owner/role; `404`: resource không tồn tại; `409`: state/idempotency conflict; `413`: body vượt giới hạn; `429`: giới hạn tần suất; `503`: dependency/content khởi đầu chưa sẵn sàng hoặc DB pool queue đầy (`SERVICE_BUSY`).
+- `400`: DTO/JSON không hợp lệ; `401`: thiếu/sai/hết hạn token; `403`: sai owner/role; `404`: resource không tồn tại; `405`: gọi endpoint bằng HTTP method không được hỗ trợ; `409`: state/idempotency conflict; `413`: body vượt giới hạn; `429`: giới hạn tần suất; `503`: dependency/content khởi đầu chưa sẵn sàng hoặc DB pool queue đầy (`SERVICE_BUSY`).
 - REST lỗi có dạng `{ ok:false, error:string, code, details?, requestId?, message? }`; `message` lặp lại `error` để tiện client mới. Unexpected 5xx không lộ message nội bộ. Một số endpoint tương thích cũ trả JSON trực tiếp thay vì bọc `ok`.
 
 | Endpoint | Success status | Side effect |

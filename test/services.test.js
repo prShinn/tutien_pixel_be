@@ -47,13 +47,28 @@ test('breakthrough derives threshold and gains from server realm catalog', async
       decorate: (player) => ({ ...player, dto: true }),
     },
     inventory: { absorb: async () => ({}) },
-    store: { breakthrough: async (_userId, _requestId, input) => { progression = input; return { player: { id: 'p1' }, result: { type: 'stage_breakthrough', major: false } }; } },
+    store: { replayBreakthrough: async () => null, breakthrough: async (_userId, _requestId, input) => { progression = input; return { player: { id: 'p1' }, result: { type: 'stage_breakthrough', major: false } }; } },
   });
   const result = await service.breakthrough('u1', 'request-456');
   assert.equal(progression.realm.code, 'LUYEN_THE');
   assert.equal(progression.threshold, 1000);
   assert.equal(progression.major, false);
   assert.equal(result.player.dto, true);
+});
+
+test('breakthrough retry returns the prior result even after tu vi was spent', async () => {
+  const player = { realmCode: 'KHI_DONG', realmStage: 1, tuVi: 0 };
+  const result = { type: 'realm_breakthrough', major: true };
+  const service = createCultivationService({
+    catalog: {},
+    players: { snapshot: async () => player },
+    inventory: {},
+    store: {
+      replayBreakthrough: async () => ({ result }),
+      breakthrough: async () => assert.fail('retry cannot consume a second pill'),
+    },
+  });
+  assert.deepEqual(await service.breakthrough('u1', 'request-replay'), { player, result });
 });
 
 test('breakthrough rejects insufficient tu vi without calling storage', async () => {
@@ -63,7 +78,7 @@ test('breakthrough rejects insufficient tu vi without calling storage', async ()
     catalog: { getRealmByCode: () => realm, getRealmByStt: () => null },
     players: { snapshot: async () => ({ realmCode: realm.code, realmStage: 1, tuVi: 0, stats: { str: 5, agi: 5, vit: 5, ene: 5 }, canhGioi: realm, tuViLenCap: 1000 }) },
     inventory: {},
-    store: { breakthrough: async () => { called = true; } },
+    store: { replayBreakthrough: async () => null, breakthrough: async () => { called = true; } },
   });
   await assert.rejects(service.breakthrough('u1', 'request-456'), { code: 'INSUFFICIENT_TUVI' });
   assert.equal(called, false);
