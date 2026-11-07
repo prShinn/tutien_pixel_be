@@ -1,7 +1,42 @@
 const seed = require('../data/mock-data');
-const { BALANCE, deriveStats, combatPower } = require('../data/balance');
+const { BALANCE, deriveStats, describeEquipment, combatPower } = require('../data/balance');
 
 const clone = (value) => structuredClone(value);
+
+// Existing item overrides predate weapon roles, so classify legacy catalog IDs explicitly.
+const legacyStaves = new Set([
+  'MOC_WEAPON_NGOC_TRUC_TRUONG', 'THUY_WEAPON_THUY_LONG_TRUONG', 'HOA_WEAPON_HOA_LINH_TRUONG',
+  'QUANG_WEAPON_QUANG_MINH_TRUONG', 'LOI_WEAPON_THIEN_LOI_TRUONG',
+]);
+const legacySwords = new Set([
+  'WEAPON_KIEM_GO', 'WEAPON_TRUC_KIEM', 'SWORD_BAO_KHI_1', 'KIM_WEAPON_THIET_KIEM',
+  'KIM_WEAPON_BACH_KIM_KIEM', 'THUY_WEAPON_HAI_TRIEU_KIEM', 'HOA_WEAPON_THIEN_VIEM_KIEM',
+  'THO_WEAPON_SON_HA_TRUC_KIEM', 'QUANG_WEAPON_THIEN_QUANG_KIEM', 'AM_WEAPON_U_MINH_KIEM',
+  'PHONG_WEAPON_THANH_PHONG_KIEM', 'PHONG_WEAPON_CUONG_PHONG_KIEM', 'LOI_WEAPON_THIEN_LOI_KIEM',
+  'COM_WEAPON_BACH_TINH_KIEM', 'COM_WEAPON_NGUY_NGUYEN_KIEM',
+]);
+const legacyWeaponKinds = new Map([
+  ['WEAPON_DAO_SAT', 'blade'],
+  ['AM_WEAPON_AM_DA_DAO', 'blade'],
+  ['THO_WEAPON_DIA_CUI_THUONG', 'hammer'],
+]);
+const weaponProfiles = {
+  sword: { style: 'sword', range: 26, damageType: 'PHYS', scalingStat: 'str', cooldownMs: 700, damageMultiplier: 1 },
+  blade: { style: 'blade', range: 26, damageType: 'PHYS', scalingStat: 'agi', cooldownMs: 570, damageMultiplier: 0.9 },
+  mace: { style: 'mace', range: 26, damageType: 'PHYS', cooldownMs: 880, damageMultiplier: 1.2 },
+  hammer: { style: 'hammer', range: 24, damageType: 'PHYS', cooldownMs: 1050, damageMultiplier: 1.4 },
+  spear: { style: 'spear', range: 36, damageType: 'PHYS', scalingStat: 'str', cooldownMs: 760, damageMultiplier: 1.05 },
+  staff: { style: 'staff', range: 56, damageType: 'MAGIC', scalingStat: 'ene', cooldownMs: 850, damageMultiplier: 1 },
+  bow: { style: 'bow', range: 72, damageType: 'PHYS', scalingStat: 'agi', cooldownMs: 760, damageMultiplier: 1 },
+  crossbow: { style: 'crossbow', range: 70, damageType: 'PHYS', scalingStat: 'str', cooldownMs: 1000, damageMultiplier: 1.3 },
+  melee: { style: 'melee', range: 26, damageType: 'PHYS' },
+};
+
+function weaponAttack(item) {
+  const kind = item.weaponKind || legacyWeaponKinds.get(item.id)
+    || (legacyStaves.has(item.id) ? 'staff' : legacySwords.has(item.id) ? 'sword' : 'melee');
+  return clone(weaponProfiles[Object.hasOwn(weaponProfiles, kind) ? kind : 'melee']);
+}
 
 function createCatalogService() {
   let items = clone(seed.items);
@@ -10,6 +45,13 @@ function createCatalogService() {
   let monsterRevision = 0;
   const recordVersions = new Map();
   let skillVfxProfiles = {};
+  function describeItem(item) {
+    if (!item) return null;
+    const result = clone(item);
+    if (String(item.type || item.loai).toUpperCase() === 'EQUIPMENT') result.equipmentInfo = describeEquipment(item);
+    if (item.slot === 'weapon') result.basicAttack = weaponAttack(item);
+    return result;
+  }
   return {
     listRealms: () => clone(seed.realms),
     getRealmByStt: (stt) => clone(seed.realms.find((realm) => realm.stt === Number(stt)) || null),
@@ -17,8 +59,8 @@ function createCatalogService() {
     getRealmByCode: (code) => clone(seed.realms.find((realm) => realm.code === code) || null),
     listRoots: () => clone(seed.roots),
     getRootByCode: (code) => clone(seed.roots.find((root) => root.id === code || root.maLinhCan === code) || null),
-    listItems: () => clone(items),
-    getItemByCode: (code) => clone(items.find((item) => item.id === code || item.maDo === code) || null),
+    listItems: () => items.map(describeItem),
+    getItemByCode: (code) => describeItem(items.find((item) => item.id === code || item.maDo === code) || null),
     listSkills: () => clone(skills),
     listMonsters: () => clone(monsters),
     getMonsterRevision: () => monsterRevision,
@@ -62,7 +104,9 @@ function createCatalogService() {
       const equipment = Object.fromEntries(slots.map((slot) => {
         const stored = player.equipment?.[slot];
         const code = typeof stored === 'string' ? stored : stored?.itemCode || stored?.id;
-        return [slot, code ? { ...(items.find((item) => item.id === code) || {}), id: code, itemCode: code } : null];
+        const item = items.find((entry) => entry.id === code);
+        const details = item && slot === 'weapon' ? { ...item, basicAttack: weaponAttack(item) } : item;
+        return [slot, code ? { ...details, id: code, itemCode: code } : null];
       }));
       const learnedSkills = player.learnedSkills || [];
       const equippedSkills = player.equippedSkills || [];

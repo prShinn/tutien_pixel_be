@@ -147,6 +147,29 @@ function monsterPressure(player = {}, monster = {}, derived = deriveStats(player
   return Math.max(-0.35, Math.min(1.5, levelGap * 0.12 + (monsterThreat / Math.max(1, playerThreat) - 1) * 0.35));
 }
 
+function combatStatPower(derived) {
+  return derived.pAtk + derived.mAtk + (derived.pDef + derived.mDef) * 1.5 + derived.maxHp * 0.1 + derived.maxMp * 0.1;
+}
+
+function equipmentStatPower(equipment = {}) {
+  return Object.values(equipment || {}).reduce((sum, item) => sum + Object.values(item?.stats || {}).reduce((n, value) => n + Number(value || 0), 0), 0);
+}
+
+function describeEquipment(item) {
+  const base = deriveStats();
+  const equipped = deriveStats({}, { preview: item });
+  const bonuses = {};
+  for (const key of ['pAtk', 'mAtk', 'pDef', 'mDef', 'maxHp', 'maxMp']) {
+    const delta = equipped[key] - base[key];
+    if (delta !== 0) bonuses[key] = delta;
+  }
+  const appliedKeys = new Set(['pAtk', 'mAtk', 'pDef', 'mDef', 'maxHP', 'maxMP']);
+  const ratingOnly = Object.fromEntries(Object.entries(item.stats || {}).filter(([key, value]) => !appliedKeys.has(key) && Number(value) !== 0));
+  const combatOvr = (combatStatPower(equipped) - combatStatPower(base)) * BALANCE.progression.statWeight;
+  const itemOvr = equipmentStatPower({ preview: item }) * BALANCE.progression.equipmentWeight;
+  return { bonuses, ratingOnly, combatOvr, itemOvr, ovr: combatOvr + itemOvr };
+}
+
 function combatPower(player = {}) {
   const derived = deriveStats(player.stats, player.equipment);
   const realm = Number(player.canhGioi?.stt || player.realm || 1);
@@ -155,8 +178,8 @@ function combatPower(player = {}) {
   const mastery = Math.max(0, Math.min(1, Number(player.tuViHienTai || 0) / cap));
   const overflowRatio = Math.max(0, Number(player.tuViHienTai || 0) / cap - 1);
   const overflowPower = Math.min(BALANCE.progression.cultivation.maxOvercapOvr, overflowRatio * BALANCE.progression.cultivation.overcapOvrWeight);
-  const statPower = derived.pAtk + derived.mAtk + (derived.pDef + derived.mDef) * 1.5 + derived.maxHp * 0.1 + derived.maxMp * 0.1;
-  const equipmentPower = Object.values(player.equipment || {}).reduce((sum, item) => sum + Object.values(item?.stats || {}).reduce((n, value) => n + Number(value || 0), 0), 0);
+  const statPower = combatStatPower(derived);
+  const equipmentPower = equipmentStatPower(player.equipment);
   const skillPower = Array.isArray(player.learnedSkills || player.skills) ? (player.learnedSkills || player.skills).length * BALANCE.progression.skillWeight : 0;
   const linhCanPower = Math.min(BALANCE.progression.linhCan.itemCap * BALANCE.progression.linhCan.ovrItemWeight, Math.max(0, Number(player.tuViLinhCan || 0)) * BALANCE.progression.linhCan.ovrItemWeight);
   return Math.floor(realm * BALANCE.progression.realmWeight + stage * BALANCE.progression.stageWeight + mastery * BALANCE.progression.masteryWeight + overflowPower + statPower * BALANCE.progression.statWeight + equipmentPower * BALANCE.progression.equipmentWeight + skillPower + linhCanPower);
@@ -190,4 +213,4 @@ function breakthroughGain(realm = {}, stage = 1, major = false) {
   return { str: base + (remainder > 0 ? 1 : 0), agi: base + (remainder > 1 ? 1 : 0), vit: base + (remainder > 2 ? 1 : 0), ene: base };
 }
 
-module.exports = { BALANCE, affinityMultiplier, affinityCritBonus, affinityProfile, elementalStrength, deriveStats, mitigateDamage, combatTier, monsterPressure, combatPower, calcTuViNeeded, breakthroughThreshold, minimumBreakthroughOvr, breakthroughGain };
+module.exports = { BALANCE, affinityMultiplier, affinityCritBonus, affinityProfile, elementalStrength, deriveStats, describeEquipment, mitigateDamage, combatTier, monsterPressure, combatPower, calcTuViNeeded, breakthroughThreshold, minimumBreakthroughOvr, breakthroughGain };

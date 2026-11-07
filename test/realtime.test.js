@@ -42,6 +42,7 @@ function makePlayer(overrides = {}) {
     maxHp: 100,
     mp: 50,
     maxMp: 50,
+    positionVersion: 1,
     xu: 50,
     stats: { str: 10, agi: 5, vit: 5, ene: 5 },
     derivedStats: { pAtk: 50, mAtk: 30, pDef: 15, mDef: 10, crit: 0, evasion: 0 },
@@ -80,10 +81,25 @@ function makeHarness({ player = makePlayer(), maps, skills = [], lootTables = {}
     saves: [],
     pickups: new Set(),
     vitals: new Map(),
-    async savePlayerPosition(userId, mapCode, x, y) {
+    positionCompareCount: 0,
+    stalePositionCompareAt: 0,
+    async savePlayerPosition(userId, mapCode, x, y, options = {}) {
+      if (options.expectedPosition) {
+        this.positionCompareCount += 1;
+        if (this.positionCompareCount === this.stalePositionCompareAt) {
+          current.hp = 0;
+          current.positionVersion += 1;
+        }
+        if (current.hp <= 0 || Number(options.expectedPosition.positionVersion) !== Number(current.positionVersion)) {
+          return { saved: false, stale: true };
+        }
+      }
+      current.positionVersion += 1;
       Object.assign(current, { mapCode, x, y });
       this.saves.push({ userId, mapCode, x, y });
-      return structuredClone(current);
+      return options.includeSnapshot === false
+        ? { saved: true, mapCode, x, y, positionVersion: current.positionVersion }
+        : structuredClone(current);
     },
     async updateVitals(userId, requestId, action, changes) {
       const existing = this.vitals.get(`${userId}:${requestId}`);
@@ -139,6 +155,26 @@ test('runtime creates FE-compatible monster ids and honors spawn pack coordinate
   const monsters = runtime.listMonsters('field');
   assert.deepEqual(monsters.map((monster) => monster.id), ['PACK_WOLF_0', 'PACK_WOLF_1', 'PACK_WOLF_2']);
   assert.ok(monsters.every((monster) => monster.templateId === 'WOLF' && monster.maxHp === 20));
+});
+
+test('runtime snapshot restores authoritative room state and reattaches player cooldowns without stale sockets', () => {
+  const map = makeMap('field', { monsters: [{ id: 'WOLF', code: 'WOLF', hp: 40, maxHp: 40 }] });
+  const world = { getByCode: () => map };
+  const source = createWorldRuntime({ world });
+  source.enter('field', makePlayer({ userId: 'user_test', buffs: { shield: { expiresAt: Date.now() + 5000 } }, cooldowns: new Map([['KIM_KICH', Date.now() + 3000]]) }), 'old_socket');
+  const monster = source.listMonsters('field')[0];
+  source.damageMonster('field', monster.id, 11);
+  source.addDrop('field', { id: 'drop_saved', itemCode: 'STONE', quantity: 1, expiresAt: Date.now() + 5000 });
+  const snapshot = source.exportRoom('field');
+
+  const recovered = createWorldRuntime({ world });
+  assert.equal(recovered.restoreRoom('field', snapshot), true);
+  assert.equal(recovered.activeRooms()[0].players.size, 0);
+  assert.equal(recovered.listMonsters('field')[0].hp, 29);
+  assert.equal(recovered.listDrops('field')[0].id, 'drop_saved');
+  const onlineState = recovered.takeOrphanedPlayer('field', 'user_test');
+  assert.equal(onlineState.buffs.shield.expiresAt > Date.now(), true);
+  assert.equal(onlineState.cooldowns.get('KIM_KICH') > Date.now(), true);
 });
 
 test('configured monster packs use exact counts, safe tiles and an explicit empty list', () => {
@@ -238,6 +274,23 @@ test('map.change requires a nearby portal and chooses its server destination', a
   harness.gameplay.close();
 });
 
+test('map.change does not overwrite a concurrent death or respawn position', async (t) => {
+  const field = makeMap('field', { portals: [{ id: 'gate', x: 1, y: 1, toMap: 'target', toX: 5, toY: 5 }] });
+  const harness = makeHarness({ maps: [['field', field], ['target', makeMap('target')]] });
+  t.after(() => harness.gameplay.close());
+  const socket = fakeSocket();
+  await send(harness.gameplay, socket, 'join_portal_race_01', 'world.join');
+  harness.store.stalePositionCompareAt = 2;
+
+  await assert.rejects(
+    send(harness.gameplay, socket, 'map_portal_race_01', 'map.change', { mapCode: 'target' }),
+    { code: 'PLAYER_STATE_CHANGED' },
+  );
+  assert.equal(harness.current.hp, 0);
+  assert.equal(harness.current.mapCode, 'field');
+  assert.equal(harness.gameplay.runtime.getPlayer('target', socket.id), null);
+});
+
 test('combat attack damages authoritative monster and emits FE combat/death events', async () => {
   const field = makeMap('field', {
     monsters: [{ id: 'MOB', code: 'MOB', name: 'Mob', hp: 8, maxHp: 8, def: 0, atk: 1, speed: 0.5 }],
@@ -252,6 +305,33 @@ test('combat attack damages authoritative monster and emits FE combat/death even
   assert.ok(harness.broadcastEvents.some((event) => event.name === 'combat_result'));
   assert.ok(harness.broadcastEvents.some((event) => event.name === 'monster_death'));
   harness.gameplay.close();
+});
+
+test('online combat can kill a player and respawn rejoins without restoring the stale death position', async (t) => {
+  const field = makeMap('field', {
+    monsters: [{ id: 'LETHAL_MOB', code: 'LETHAL_MOB', name: 'Mob', hp: 20, maxHp: 20, def: 0, atk: 10000, speed: 1 }],
+    monsterSpawns: [{ packId: 'LETHAL_PACK', templateId: 'LETHAL_MOB', centerX: 1, centerY: 1, count: 1, radius: 1, aggroRange: 40 }],
+  });
+  field.rules = { monsterPacksOnly: true };
+  const harness = makeHarness({ maps: [['field', field]], player: makePlayer({ hp: 1 }) });
+  t.after(() => harness.gameplay.close());
+  const socket = fakeSocket();
+  await send(harness.gameplay, socket, 'join_death_001', 'world.join');
+
+  for (let attempt = 0; attempt < 25 && harness.current.hp > 0; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.equal(harness.current.hp, 0);
+  assert.ok(harness.broadcastEvents.some((event) => event.name === 'player_combat_result' && event.payload.hp === 0));
+  await assert.rejects(send(harness.gameplay, socket, 'move_dead_001', 'movement.intent', { x: 4.5, y: 4.5 }), { code: 'PLAYER_DEAD' });
+
+  Object.assign(harness.current, { hp: 100, mp: 50, mapCode: 'field', x: 5, y: 5 });
+  const joined = await send(harness.gameplay, socket, 'respawn_join_01', 'world.join');
+  assert.equal(joined.result.player.hp, 100);
+  assert.equal(joined.result.player.x, 5);
+  assert.equal(harness.gameplay.runtime.getPlayer('field', socket.id).hp, 100);
+  assert.equal(harness.gameplay.runtime.getPlayer('field', socket.id).x, 5);
+  assert.equal(harness.store.saves.length, 0, 'the old dead session must not write its stale position after the respawn commit');
 });
 
 test('area attack keeps its request ID across another command and spends MP once', async (t) => {

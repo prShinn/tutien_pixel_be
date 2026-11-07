@@ -123,7 +123,36 @@ function createPlayerService({ store, catalog, world }) {
     return decorate(await store.updatePlayerName(userId, playerId, name));
   }
 
-  return { create, snapshot, decorate, power, allocateStats, update };
+  function respawnPoint(map) {
+    if (!map || !Number.isSafeInteger(map.spawnX) || !Number.isSafeInteger(map.spawnY)) {
+      throw new DomainError('WORLD_NO_WALKABLE_SPAWN', 'Chưa có điểm hồi sinh hợp lệ', 503);
+    }
+    const walkable = (x, y) => Number.isFinite(x) && Number.isFinite(y) && x >= 0 && y >= 0
+      && x < Number(map.w) && y < Number(map.h)
+      && Number(map.jsonMap?.[Math.floor(y)]?.[Math.floor(x)] ?? 0) !== 2;
+    if (walkable(map.spawnX, map.spawnY)) return { x: map.spawnX, y: map.spawnY };
+    for (let radius = 1; radius <= 12; radius += 1) {
+      for (let dy = -radius; dy <= radius; dy += 1) {
+        for (let dx = -radius; dx <= radius; dx += 1) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
+          const x = Math.floor(map.spawnX + dx) + 0.5;
+          const y = Math.floor(map.spawnY + dy) + 0.5;
+          if (walkable(x, y)) return { x, y };
+        }
+      }
+    }
+    throw new DomainError('WORLD_NO_WALKABLE_SPAWN', 'Bản đồ không có ô đi được gần điểm hồi sinh', 503);
+  }
+
+  async function respawn(userId, input) {
+    validateRequestId(input?.requestId);
+    const startingWorld = world.getDefault();
+    const point = respawnPoint(startingWorld);
+    const mutation = await store.respawn(userId, input.requestId, startingWorld.code, point.x, point.y);
+    return { ok: true, player: decorate(mutation.player), result: mutation.result };
+  }
+
+  return { create, snapshot, decorate, power, allocateStats, update, respawn };
 }
 
 module.exports = { createPlayerService };

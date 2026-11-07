@@ -253,6 +253,12 @@ const items = [
   { id: "MAT_QUANG_SAT", maDo: "MAT_QUANG_SAT", tenDo: "Quặng Sắt Thô", name: "Quặng Sắt Thô", icon: "⛏️", loai: "MATERIAL", type: "MATERIAL", giaMua: 15, giaBan: 8, moTa: "Quặng sắt sơ cấp khai thác từ vách đá, dùng cho thợ rèn." },
   { id: "MAT_THAO_DUOC", maDo: "MAT_THAO_DUOC", tenDo: "Bạch Linh Thảo", name: "Bạch Linh Thảo", icon: "🌿", loai: "MATERIAL", type: "MATERIAL", giaMua: 12, giaBan: 6, moTa: "Thảo dược mọc ven sông rãnh, nguyên liệu luyện đan dược." },
   { id: "MAT_DA_THU", maDo: "MAT_DA_THU", tenDo: "Da Thú Dày", name: "Da Thú Dày", icon: "📜", loai: "MATERIAL", type: "MATERIAL", giaMua: 18, giaBan: 9, moTa: "Tấm da dày của heo rừng và hoang dã thú, dùng may trang bị." },
+  { id: "WEAPON_CUNG_GO", maDo: "WEAPON_CUNG_GO", name: "Cung Gỗ Tân Thủ", tenDo: "Cung Gỗ Tân Thủ", icon: "🏹", img: "./assets/items/equipment/weapon_cung_go.svg", type: "EQUIPMENT", loai: "EQUIPMENT", slot: "weapon", weaponKind: "bow", requiredRealmStt: 1, giaMua: 45, giaBan: 22, stats: { pAtk: 3 }, moTa: "Cung gỗ dùng để bắn đòn thường từ xa." },
+  { id: "WEAPON_BUA_DONG", maDo: "WEAPON_BUA_DONG", name: "Búa Đồng Rèn", tenDo: "Búa Đồng Rèn", icon: "🔨", img: "./assets/items/equipment/weapon_bua_dong.svg", type: "EQUIPMENT", loai: "EQUIPMENT", slot: "weapon", weaponKind: "hammer", requiredRealmStt: 1, giaMua: 110, giaBan: 55, stats: { pAtk: 14, str: 1 }, moTa: "Búa chiến nặng, đánh chậm nhưng có lực công phá cao." },
+  { id: "WEAPON_CHUY_SAT", maDo: "WEAPON_CHUY_SAT", name: "Chùy Gai Thiết Cốt", tenDo: "Chùy Gai Thiết Cốt", icon: "✥", img: "./assets/items/equipment/weapon_chuy_sat.svg", type: "EQUIPMENT", loai: "EQUIPMENT", slot: "weapon", weaponKind: "mace", requiredRealmStt: 1, giaMua: 95, giaBan: 47, stats: { pAtk: 13, pDef: 2 }, moTa: "Chùy gai nặng, mỗi cú đánh dồn lực phá giáp." },
+  { id: "WEAPON_THUONG_TRUC", maDo: "WEAPON_THUONG_TRUC", name: "Trường Thương Trúc", tenDo: "Trường Thương Trúc", icon: "🔱", img: "./assets/items/equipment/weapon_thuong_truc.svg", type: "EQUIPMENT", loai: "EQUIPMENT", slot: "weapon", weaponKind: "spear", requiredRealmStt: 1, giaMua: 80, giaBan: 40, stats: { pAtk: 10, agi: 1 }, moTa: "Thương dài tầm trung, giữ khoảng cách và đâm thẳng." },
+  { id: "WEAPON_NO_CO_QUAN", maDo: "WEAPON_NO_CO_QUAN", name: "Nỏ Cơ Quan", tenDo: "Nỏ Cơ Quan", icon: "🏹", img: "./assets/items/equipment/weapon_no_co_quan.svg", type: "EQUIPMENT", loai: "EQUIPMENT", slot: "weapon", weaponKind: "crossbow", requiredRealmStt: 1, giaMua: 125, giaBan: 62, stats: { pAtk: 16 }, moTa: "Nỏ cơ quan bắn chậm, bolt xuyên mục tiêu từ xa." },
+  { id: "WEAPON_DAO_LIEU_DIEP", maDo: "WEAPON_DAO_LIEU_DIEP", name: "Đao Liễu Diệp", tenDo: "Đao Liễu Diệp", icon: "🗡️", img: "./assets/items/equipment/weapon_dao_lieu_diep.svg", type: "EQUIPMENT", loai: "EQUIPMENT", slot: "weapon", weaponKind: "blade", requiredRealmStt: 1, giaMua: 75, giaBan: 37, stats: { pAtk: 9, agi: 2 }, moTa: "Đao mỏng nhẹ, chém nhanh theo vòng cung." },
   { id: "WEAPON_KIEM_GO", maDo: "WEAPON_KIEM_GO", tenDo: "Kiếm Gỗ Tân Thủ", name: "Kiếm Gỗ Tân Thủ", icon: "🗡️", img: "./assets/items/equipment/weapon_kiem_go.png", loai: "EQUIPMENT", type: "EQUIPMENT", slot: "weapon", requiredRealmStt: 1, giaMua: 30, giaBan: 15, stats: { pAtk: 5 }, moTa: "Kiếm gỗ đào sơ cấp cho tu sĩ mới nhập môn." },
   { id: "WEAPON_DAO_SAT", maDo: "WEAPON_DAO_SAT", tenDo: "Thiết Đao Thợ Rèn", name: "Thiết Đao Thợ Rèn", icon: "⚔️", img: "./assets/items/equipment/weapon_dao_sat.png", loai: "EQUIPMENT", type: "EQUIPMENT", slot: "weapon", requiredRealmStt: 1, giaMua: 90, giaBan: 45, stats: { pAtk: 12 }, moTa: "Đao được rèn từ quặng sắt thô, sắc bén cứng cáp." },
   { id: "WEAPON_TRUC_KIEM", maDo: "WEAPON_TRUC_KIEM", tenDo: "Thanh Trúc Linh Kiếm", name: "Thanh Trúc Linh Kiếm", icon: "🌿", img: "./assets/items/equipment/weapon_truc_kiem.png", loai: "EQUIPMENT", type: "EQUIPMENT", slot: "weapon", requiredRealmStt: 2, giaMua: 260, giaBan: 130, stats: { pAtk: 20, mAtk: 14 }, moTa: "Kiếm trúc khắc phù chú linh lực, uy lực bất phàm." },
@@ -449,7 +455,67 @@ const passiveSkills = roots.map((root, index) => ({
   moTa: `Bị động tự áp dụng: ${passiveDesign[root.id]?.description || root.passive}`,
 }));
 
-const skillCatalog = [...commonSkills, ...balancedSkills, ...passiveSkills];
+const rangedSkills = [
+  {
+    id: 303, code: "LINH_QUANG_DAN", name: "Linh Quang Đạn", icon: "🔮",
+    img: "./assets/skills/linh_quang_dan.svg", vfxForm: "fireball",
+    type: "MAGIC", scalingStat: "ene", satThuong: 1.1, range: 11, mpTieuHao: 8, hoiChieu: 5,
+    moTa: "Phóng một linh đạn gây sát thương phép lên một mục tiêu trong tầm 66 ô.",
+  },
+  {
+    id: 304, code: "XUYEN_PHONG_TIEN", name: "Xuyên Phong Tiễn", icon: "🏹",
+    img: "./assets/skills/xuyen_phong_tien.svg", vfxForm: "arrow",
+    type: "PHYS", scalingStat: "str", satThuong: 1.05, range: 14, mpTieuHao: 10, hoiChieu: 7,
+    moTa: "Ngưng linh lực thành mũi tên, gây sát thương vật lý lên một mục tiêu trong tầm 84 ô.",
+  },
+  {
+    id: 305, code: "BUA_SON_TACH", name: "Búa Sơn Tách", icon: "🔨",
+    img: "./assets/skills/bua-son-tach.svg", vfxForm: "mountain-slam", weaponKinds: ["hammer"],
+    type: "PHYS", scalingStat: "str", satThuong: 1.6, range: 4, dienRong: 1.8,
+    effect: "stun", effectVal: 1, thoiGianBuff: 1, mpTieuHao: 14, hoiChieu: 12,
+    moTa: "Nện búa xuống đất, gây sát thương và choáng các địch thủ lân cận.",
+  },
+  {
+    id: 306, code: "CHUY_THIET_COT", name: "Chùy Thiết Cốt", icon: "✥",
+    img: "./assets/skills/chuy-thiet-cot.svg", vfxForm: "shatter", weaponKinds: ["mace"],
+    type: "PHYS", scalingStat: "str", satThuong: 1.55, range: 5,
+    effect: "armor_break", effectVal: 1, mpTieuHao: 12, hoiChieu: 10,
+    moTa: "Nện chùy phá giáp một mục tiêu trong tầm gần.",
+  },
+  {
+    id: 307, code: "DAO_LIET_NGUYET", name: "Đao Liệt Nguyệt", icon: "🌙",
+    img: "./assets/skills/dao-liet-nguyet.svg", vfxForm: "crescent", weaponKinds: ["blade"],
+    type: "PHYS", scalingStat: "agi", satThuong: 1.35, range: 5, dienRong: 2,
+    mpTieuHao: 11, hoiChieu: 8,
+    moTa: "Vung đao thành vòng cung, chém trúng các mục tiêu gần nhau.",
+  },
+  {
+    id: 308, code: "THUONG_BACH_BO", name: "Thương Bách Bộ", icon: "🔱",
+    img: "./assets/skills/thuong-bach-bo.svg", vfxForm: "piercing-thrust", weaponKinds: ["spear"],
+    type: "PHYS", scalingStat: "str", satThuong: 1.4, range: 7,
+    effect: "armor_break", effectVal: 1, mpTieuHao: 10, hoiChieu: 7,
+    moTa: "Đâm thương thẳng, xuyên phòng thủ một mục tiêu ở tầm trung.",
+  },
+  {
+    id: 309, code: "CUNG_LIEN_CHAU", name: "Cung Liên Châu", icon: "🏹",
+    img: "./assets/skills/cung-lien-chau.svg", vfxForm: "arrow-volley", weaponKinds: ["bow"],
+    type: "PHYS", scalingStat: "agi", satThuong: 1.2, range: 12, dienRong: 1.5,
+    requiresLineOfSight: true, mpTieuHao: 12, hoiChieu: 9,
+    moTa: "Bắn một chùm tên vào mục tiêu và các địch thủ sát bên.",
+  },
+  {
+    id: 310, code: "NO_PHA_GIAP", name: "Nỏ Phá Giáp", icon: "🎯",
+    img: "./assets/skills/no-pha-giap.svg", vfxForm: "crossbow-bolt", weaponKinds: ["crossbow"],
+    type: "PHYS", scalingStat: "str", satThuong: 1.7, range: 13,
+    requiresLineOfSight: true, effect: "armor_break", effectVal: 1,
+    mpTieuHao: 15, hoiChieu: 13,
+    moTa: "Nạp lực vào nỏ, bắn một mũi tên xuyên giáp tầm xa.",
+  },
+].map((skill) => ({
+  ...skill, linhCan: "COMMON", category: "ACTIVE", tier: 1, targetType: "ENEMY", requiresLineOfSight: true,
+}));
+
+const skillCatalog = [...commonSkills, ...rangedSkills, ...balancedSkills, ...passiveSkills];
 
 const monsterDefs = [
   { id: "MOC_NHAN", code: "MOC_NHAN", name: "Mộc Nhân Thung", icon: "🪵", img: "./assets/monsters/doc_thao_sheet.png", animation: { kind: "grid", cols: 4, rows: 4, width: 16, height: 16 }, type: "NORMAL", level: 1, linhCan: "MOC", nguHanh: ["MOC"], color: "#b3895d", hp: 60, maxHp: 60, mp: 20, maxMp: 20, atk: 2, def: 1, speed: 0.6, spawnX: 315, spawnY: 215, lootTableId: "MOC_NHAN_LOOT" },

@@ -145,6 +145,36 @@ test('player update rejects snapshot fields instead of mass-assigning state', as
   assert.equal(called, false);
 });
 
+test('player respawn uses the published default spawn and decorates the committed snapshot', async () => {
+  let storedCall;
+  const start = { code: 'start_map', w: 4, h: 4, spawnX: 2, spawnY: 3, jsonMap: Array.from({ length: 4 }, () => [0, 0, 0, 0]) };
+  const realm = { stt: 1, code: 'LUYEN_THE', tuViTienCap: 1000, tangTuVi: [{ stt: 1 }] };
+  const service = createPlayerService({
+    store: { respawn: async (...args) => { storedCall = args; return { player: { id: 'p1', realmCode: realm.code, realmStage: 1, mapCode: start.code }, result: { type: 'player_respawned' } }; } },
+    catalog: { getRealmByCode: () => realm, getRealmByStt: () => realm, getRootByCode: (code) => ({ code }), decoratePlayer: (player) => ({ ...player, dto: true }) },
+    world: { getDefault: () => start, getByCode: () => start },
+  });
+
+  const result = await service.respawn('u1', { requestId: 'respawn-123' });
+  assert.deepEqual(storedCall, ['u1', 'respawn-123', 'start_map', 2, 3]);
+  assert.equal(result.ok, true);
+  assert.equal(result.player.dto, true);
+  assert.equal(result.result.type, 'player_respawned');
+});
+
+test('player respawn rejects an invalid spawn before writing state', async () => {
+  let called = false;
+  const start = { code: 'start_map', w: 2, h: 2, spawnX: 1, spawnY: 1, jsonMap: [[2, 2], [2, 2]] };
+  const service = createPlayerService({
+    store: { respawn: async () => { called = true; } },
+    catalog: {},
+    world: { getDefault: () => start },
+  });
+
+  await assert.rejects(service.respawn('u1', { requestId: 'respawn-123' }), { code: 'WORLD_NO_WALKABLE_SPAWN' });
+  assert.equal(called, false);
+});
+
 test('PlayerDTO retains compatibility aliases and REST errors echo a valid requestId', () => {
   const player = publicPlayer({ id: 'p1', userId: 'u1', name: 'Tester', x: 1.5, y: 2.5, mapCode: 'start_map', stats: {} }, { xu: 12 }, [{ id: 'row1', itemCode: 'STONE', quantity: 2, slot: 0 }]);
   assert.equal(player.jsonIventory, JSON.stringify(player.inventory));

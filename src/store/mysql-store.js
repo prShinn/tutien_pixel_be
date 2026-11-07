@@ -432,7 +432,7 @@ function createMysqlStore(config) {
   }
 
   async function snapshotWith(connection, userId) {
-    const [players] = await connection.execute('SELECT id, user_id AS userId, name, gender, linh_can AS linhCan, realm_code AS realmCode, realm_stage AS realmStage, tu_vi AS tuVi, tu_vi_linh_can AS tuViLinhCan, hp, max_hp AS maxHp, mp, max_mp AS maxMp, map_code AS mapCode, x, y, version, str_stat AS str, agi_stat AS agi, vit_stat AS vit, ene_stat AS ene, unspent_points AS unspentPoints FROM players WHERE user_id = ? LIMIT 1', [userId]);
+    const [players] = await connection.execute('SELECT id, user_id AS userId, name, gender, linh_can AS linhCan, realm_code AS realmCode, realm_stage AS realmStage, tu_vi AS tuVi, tu_vi_linh_can AS tuViLinhCan, hp, max_hp AS maxHp, mp, max_mp AS maxMp, map_code AS mapCode, x, y, position_version AS positionVersion, version, str_stat AS str, agi_stat AS agi, vit_stat AS vit, ene_stat AS ene, unspent_points AS unspentPoints FROM players WHERE user_id = ? LIMIT 1', [userId]);
     const player = players[0];
     if (!player) throw new DomainError('PLAYER_NOT_FOUND', 'Chưa tạo nhân vật', 404);
     const [[wallet]] = await connection.query('SELECT xu, linh_thach AS linhThach FROM wallets WHERE player_id = ? LIMIT 1', [player.id]);
@@ -679,11 +679,23 @@ function createMysqlStore(config) {
     });
   }
 
-  async function savePlayerPosition(userId, mapCode, x, y, { includeSnapshot = true } = {}) {
+  async function savePlayerPosition(userId, mapCode, x, y, { includeSnapshot = true, expectedPosition } = {}) {
     return withConnection(async (connection) => {
-      const [result] = await connection.execute('UPDATE players SET map_code = ?, x = ?, y = ?, version = version + 1 WHERE user_id = ?', [mapCode, x, y, userId]);
+      let result;
+      if (expectedPosition) {
+        [result] = await connection.execute(
+          'UPDATE players SET map_code = ?, x = ?, y = ?, position_version = position_version + 1, version = version + 1 WHERE user_id = ? AND position_version = ? AND hp > 0',
+          [mapCode, x, y, userId, expectedPosition.positionVersion],
+        );
+      } else {
+        [result] = await connection.execute('UPDATE players SET map_code = ?, x = ?, y = ?, position_version = position_version + 1, version = version + 1 WHERE user_id = ?', [mapCode, x, y, userId]);
+      }
+      if (!result.affectedRows && expectedPosition) {
+        const [[existing]] = await connection.query('SELECT id FROM players WHERE user_id = ? LIMIT 1', [userId]);
+        if (existing) return { saved: false, stale: true };
+      }
       if (!result.affectedRows) throw new DomainError('PLAYER_NOT_FOUND', 'Chưa tạo nhân vật', 404);
-      if (!includeSnapshot) return { saved: true };
+      if (!includeSnapshot) return { saved: true, mapCode, x, y, positionVersion: Number(expectedPosition?.positionVersion || 0) + 1 };
       return snapshotWith(connection, userId);
     });
   }
@@ -697,6 +709,18 @@ function createMysqlStore(config) {
       await connection.execute('UPDATE players SET hp = ?, mp = ? WHERE id = ?', [hp, mp, player.id]);
       return { hp, maxHp: player.maxHp, mp, maxMp: player.maxMp };
     }, { includeSnapshot: false, afterState: (result) => ({ hp: result.hp, mp: result.mp }) });
+  }
+
+  async function respawn(userId, requestId, mapCode, x, y) {
+    const intent = { operation: 'PLAYER_RESPAWN', mapCode, x, y };
+    return playerMutation(userId, requestId, intent, async (connection, player) => {
+      if (Number(player.hp) > 0) throw new DomainError('PLAYER_NOT_DEAD', 'Nhân vật chưa tử trận', 409);
+      await connection.execute(
+        'UPDATE players SET hp = max_hp, mp = max_mp, map_code = ?, x = ?, y = ?, position_version = position_version + 1 WHERE id = ?',
+        [mapCode, x, y, player.id],
+      );
+      return { type: 'player_respawned', mapCode, x, y, hp: player.maxHp, maxHp: player.maxHp, mp: player.maxMp, maxMp: player.maxMp };
+    }, { afterState: (result) => ({ hp: result.hp, mp: result.mp }) });
   }
 
   async function pickupGroundItem(userId, requestId, dropId, itemCode, quantity) {
@@ -893,7 +917,7 @@ function createMysqlStore(config) {
     });
   }
 
-  return { init, healthCheck, findUserByUsername, findUserById, insertUser, saveRefreshToken, rotateRefreshToken, revokeRefreshToken, playerSnapshot, createPlayer, buyItem, sellItem, useInventoryItem, allocateStats, updatePlayerName, savePlayerPosition, updateVitals, pickupGroundItem, equipItem, unequipItem, learnSkill, equipSkills, replayBreakthrough, breakthrough, questSnapshot, questAction, applyQuestEvent, listAdminWorlds, saveAdminWorlds, deleteAdminWorld, listAdminContentRecords, pageAdminCatalog, getAdminContentRecord, listAdminAccounts, mutateAdminContent, listAdminSkillVfx, mutateSkillVfx, close: () => pool.end() };
+  return { init, healthCheck, findUserByUsername, findUserById, insertUser, saveRefreshToken, rotateRefreshToken, revokeRefreshToken, playerSnapshot, createPlayer, buyItem, sellItem, useInventoryItem, allocateStats, updatePlayerName, savePlayerPosition, updateVitals, respawn, pickupGroundItem, equipItem, unequipItem, learnSkill, equipSkills, replayBreakthrough, breakthrough, questSnapshot, questAction, applyQuestEvent, listAdminWorlds, saveAdminWorlds, deleteAdminWorld, listAdminContentRecords, pageAdminCatalog, getAdminContentRecord, listAdminAccounts, mutateAdminContent, listAdminSkillVfx, mutateSkillVfx, close: () => pool.end() };
 }
 
 module.exports = { createMysqlStore };

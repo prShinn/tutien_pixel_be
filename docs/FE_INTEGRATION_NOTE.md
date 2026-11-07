@@ -47,7 +47,7 @@ FE hiện đã bỏ ghi snapshot khi kết nối BE: `Net.saveNow()` trả về 
 - `game_command` là envelope realtime chuẩn `{ requestId, type, payload }`. Tám command `world.join`, `world.resync`, `movement.intent`, `map.change`, `combat.attack`, `combat.skill`, `loot.pickup`, `chat.send` đã được triển khai.
 - `movement.intent.x/y` là số thực theo tile. Server giới hạn tốc độ nền 44 tile/giây rồi tính AGI/buff tốc độ từ state server, kiểm tra va chạm và trả `movement_corrected` khi client vượt tốc độ hoặc đi vào nước/ngoài map. FE tiếp tục prediction, nhưng phải reconcile theo tọa độ trả về.
 - `world.join` dùng map/vị trí lưu ở BE; `mapCode/x/y/mapVersion/hasMap` do FE gửi chỉ là hint và không thay nguồn dữ liệu server. `map.change` chỉ thành công khi nhân vật ở trong 14 tile quanh portal; BE tự chọn `toX/toY` trong portal, bỏ qua `x/y` đích FE gửi.
-- Trong `emitMapChange`, chờ ack `movement.intent` rồi mới gửi `map.change`; delay cố định 65 ms không bảo đảm server đã nhận vị trí mới khi độ trễ mạng tăng.
+- Trong `emitMapChange`, chờ ack `movement.intent` rồi mới gửi `map.change`; không dùng delay cố định để đoán độ trễ mạng.
 - `world_init` có `mapVersion`. FE hiện không so sánh version khi `mapCode` không đổi; hãy tải lại map nếu version khác `S.mapVersion` trước khi chơi tiếp.
 - Quái từ `world_init.monsters` có ID theo `monsterSpawns` của map. Combat dùng ID này; kỹ năng cần thuộc learned + equipped loadout, đủ MP và còn cooldown. Loot do server spawn; `loot.pickup` cập nhật inventory và quest một lần.
 - Server phát `world_init`, `ground_loot_state`, `player_join/leave/move`, `movement_corrected`, `monster_update/spawn/death`, `combat_result`, `player_combat_result`, `skill_result`, `player_skill_cast`, các event `ground_loot_*`, `quest_state_update`, `chat_message`. FE có thể bỏ listener `world_state`, `player_map`, `monster_state_update` vì BE không phát các event cũ này.
@@ -55,7 +55,9 @@ FE hiện đã bỏ ghi snapshot khi kết nối BE: `Net.saveNow()` trả về 
 
 ## 6. Trạng thái tích hợp
 
-BE cập nhật endpoint/payload đã triển khai trong `docs/API_V1.md`. Realtime room, quái, drop, cooldown và buff hiện ở memory một process; vị trí được flush định kỳ, còn vital mutation, item pickup và quest progress được commit trong MySQL.
+BE cập nhật endpoint/payload đã triển khai trong `docs/API_V1.md`. `POST /api/player/respawn` nhận `requestId`, chỉ cho nhân vật HP 0 hồi sinh về spawn mặc định, trả snapshot player đã commit và hỗ trợ retry cùng ID. Sau khi nhận snapshot, FE online gửi `world.join` để đồng bộ socket; BE dùng `position_version` để một flush vị trí cũ không ghi đè điểm hồi sinh.
+
+Khi có `REDIS_URL`, mỗi map có một Redis-lease owner; instance còn lại chuyển lệnh qua RPC, room event tiếp tục qua Socket.IO Redis adapter, snapshot runtime hỗ trợ takeover. Khi owner failover, các socket trong map cần kết nối lại. Không có Redis thì realtime chỉ chạy một BE instance. Vị trí/player/economy được commit trong MySQL; quái/drop/buff/cooldown có snapshot runtime trong Redis.
 
 **FE handoff bắt buộc:** admin HTML/JS hiện tại trong `D:\Setup\mine\tutien_pixel\public\admin` vẫn gửi `x-admin-key`, nên các trang admin sẽ nhận 401 cho đến khi chuyển sang Bearer JWT như mục 5. Cập nhật đồng bộ `admin/index.html`, `admin/map-editor.html`, `admin/admin.js`, `admin/map-editor.js` và `admin/content-manager.js`; bỏ input/event handler của `admin-key`, không giữ key trong `localStorage`/`sessionStorage`. API server không còn giai đoạn tương thích key.
 

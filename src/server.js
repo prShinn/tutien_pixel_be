@@ -16,6 +16,7 @@ const { createCatalogRouter } = require('./http/catalog-routes');
 const { errorHandler } = require('./http/error-handler');
 const { attachGameGateway } = require('./realtime/game-gateway');
 const { attachRedisAdapter } = require('./realtime/redis-adapter');
+const { createRoomCluster } = require('./realtime/room-cluster');
 const { createGameplayService } = require('./realtime/gameplay-service');
 const { createCatalogService } = require('./catalog/catalog-service');
 const { createWorldService } = require('./world/world-service');
@@ -102,12 +103,13 @@ async function createApp() {
     let redisReady = !realtimeAdapter.enabled;
     try { await store.healthCheck(); mysqlReady = true; } catch { /* readiness reports the failed dependency */ }
     if (realtimeAdapter.enabled) {
-      try { redisReady = await realtimeAdapter.healthCheck(); } catch { redisReady = false; }
+      try { redisReady = await realtimeAdapter.healthCheck() && await roomCluster.healthCheck(); } catch { redisReady = false; }
     }
     const dependencies = { mysql: mysqlReady ? 'ready' : 'unavailable' };
     if (realtimeAdapter.enabled) dependencies.redis = redisReady ? 'ready' : 'unavailable';
-    if (!mysqlReady || !redisReady) return res.status(503).json({ ok: false, dependencies });
-    return res.json({ ok: true, dependencies });
+    const readiness = { dependencies, realtime: roomCluster.enabled ? 'redis-room-owners' : 'single-process' };
+    if (!mysqlReady || !redisReady) return res.status(503).json({ ok: false, ...readiness });
+    return res.json({ ok: true, ...readiness });
   });
 
   app.use('/api/auth', createAuthRouter(auth, config));
@@ -118,7 +120,15 @@ async function createApp() {
   app.use('/api', createCultivationRouter({ auth, cultivation }));
   app.use('/api', createGameplayMutationRouter({ auth, equipment, skills }));
   app.use('/api', createQuestRouter({ auth, quests }));
-  const gameplay = createGameplayService({ io, auth, players, store, catalog, world, quests });
+  const roomCluster = createRoomCluster({ io, redisUrl: config.redisUrl, players, world });
+  const gameplay = createGameplayService({ io, auth, players, store, catalog, world, quests, cluster: roomCluster });
+  try {
+    await roomCluster.start();
+  } catch (error) {
+    gameplay.stop();
+    await Promise.allSettled([roomCluster.close(), realtimeAdapter.close(), store.close()]);
+    throw error;
+  }
   const adminContent = createAdminContentService({ store, catalog, world, quests, onCatalogChange(collection, id, saved) {
     gameplay.catalogChanged(collection, id, saved);
     if (realtimeAdapter.enabled) io.serverSideEmit("admin_catalog_committed", collection, id);
@@ -144,6 +154,7 @@ async function createApp() {
       gameplay.stop();
       await new Promise((resolve) => io.close(resolve));
       await gameplay.drain();
+      await roomCluster.close();
       await realtimeAdapter.close();
       await store.close();
     },

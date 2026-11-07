@@ -1,3 +1,5 @@
+const dataMode = process.env.DATA_MODE || 'real';
+if (dataMode !== 'real') throw new Error('DATA_MODE must be real; configure the actual MySQL backend');
 const isProduction = process.env.NODE_ENV === 'production';
 const jwtSecret = process.env.JWT_SECRET || (isProduction ? '' : 'local-only-change-me');
 if (!jwtSecret) throw new Error('JWT_SECRET is required in production');
