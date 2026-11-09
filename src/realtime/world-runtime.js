@@ -212,6 +212,7 @@ function createWorldRuntime({ world, catalog = null }) {
 
   return {
     getRoom: roomFor,
+    syncWorld,
     exportRoom(mapCode) {
       const room = roomFor(mapCode);
       if (!room) return null;

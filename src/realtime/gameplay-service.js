@@ -59,6 +59,57 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
       }
     }
     await tickMonsters();
+    if (now - lastRegenAt >= 1000) {
+      lastRegenAt = now;
+      await tickRegen();
+    }
+  }
+
+  let regenTickRunning = false;
+  let lastRegenAt = 0;
+
+  // buff_hp_regen / buff_mp_regen: hồi effectVal% maxHP/MP mỗi giây.
+  // buff_vitals: tổng effectVal% maxHP và maxMP, chia đều theo số giây của buff.
+  async function tickRegen() {
+    if (regenTickRunning) return;
+    regenTickRunning = true;
+    try {
+      for (const room of runtime.activeRooms()) {
+        if (cluster && !await cluster.owns(room.mapCode)) continue;
+        for (const session of room.players.values()) {
+          if (!(Number(session.hp) > 0)) continue;
+          const buffs = currentBuffs(session);
+          const vitals = buffs.buff_vitals;
+          const vitalsPerSecond = vitals ? buffPercent(buffs, 'buff_vitals') / Math.max(1, Number(vitals.durationSec || 1)) : 0;
+          const hpRate = buffPercent(buffs, 'buff_hp_regen') + vitalsPerSecond;
+          const mpRate = buffPercent(buffs, 'buff_mp_regen') + vitalsPerSecond;
+          if (hpRate <= 0 && mpRate <= 0) {
+            session.regenCarryHp = 0;
+            session.regenCarryMp = 0;
+            continue;
+          }
+          const hpGain = Math.min(Math.max(0, Number(session.maxHp || 0) - Number(session.hp || 0)),
+            Number(session.maxHp || 0) * hpRate + Number(session.regenCarryHp || 0));
+          const mpGain = Math.min(Math.max(0, Number(session.maxMp || 0) - Number(session.mp || 0)),
+            Number(session.maxMp || 0) * mpRate + Number(session.regenCarryMp || 0));
+          const hp = Math.floor(hpGain);
+          const mp = Math.floor(mpGain);
+          session.regenCarryHp = hpGain - hp;
+          session.regenCarryMp = mpGain - mp;
+          if (hp <= 0 && mp <= 0) continue;
+          try {
+            const mutation = await store.updateVitals(session.userId, `regen_${crypto.randomUUID()}`, 'BUFF_REGEN', { hp, mp });
+            if (!(Number(session.hp) > 0)) continue; // chết trong lúc chờ DB: không hồi sinh qua regen
+            session.hp = Number(mutation.result.hp);
+            session.mp = Number(mutation.result.mp);
+            io.to(session.socketId).emit('player_state_update', { hp: session.hp, maxHp: session.maxHp, mp: session.mp, maxMp: session.maxMp, buffs: session.buffs });
+          } catch { /* tick sau sẽ thử lại */ }
+        }
+        cluster?.markDirty(room.mapCode);
+      }
+    } finally {
+      regenTickRunning = false;
+    }
   }
 
   function requirePayload(value) {
@@ -546,13 +597,18 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
           const miss = Math.random() < Math.max(0, Math.min(0.35, Number(derived.evasion || 0)));
           const magic = String(monster.attackType || '').toUpperCase() === 'MAGIC';
           const attack = magic ? (monster.mAtk ?? monster.atk) : monster.atk;
-          const rawDamage = Math.max(1, Number(attack || 1) + crypto.randomInt(0, 4));
+          // Nguyền rủa: quái bị curse giảm effectVal% lực tấn công (tối đa 75%).
+          const curse = activeStatus(monster, 'curse', now);
+          const curseFactor = curse ? 1 - Math.min(0.75, Math.max(0, Number(curse.value || 0)) / 100) : 1;
+          const rawDamage = Math.max(1, Math.floor((Number(attack || 1) + crypto.randomInt(0, 4)) * curseFactor));
           const buffs = currentBuffs(target);
           const passive = combatModifiers(target);
           const defense = (magic ? derived.mDef : derived.pDef) * (1 + buffPercent(buffs, 'buff_def') + passive.defensePct);
-          const shield = buffPercent(buffs, 'shield') * (1 + passive.shieldPct);
-          const mitigated = Math.ceil(mitigateDamage(rawDamage, defense) * (1 - Math.min(0.8, shield)));
-          const damage = miss ? 0 : Math.min(Math.max(0, Number(target.hp || 0)), mitigated);
+          const mitigated = miss ? 0 : Math.ceil(mitigateDamage(rawDamage, defense));
+          // Khiên hộ thể là lớp hấp thụ (castSkill gán buffs.shield.absorb): đỡ sát thương tới khi cạn hoặc hết giờ.
+          const shield = buffs.shield;
+          const absorbed = shield ? Math.min(Math.max(0, Math.floor(Number(shield.absorb || 0))), mitigated) : 0;
+          const damage = Math.min(Math.max(0, Number(target.hp || 0)), mitigated - absorbed);
           try {
             if (damage > 0) {
               const mutation = await store.updateVitals(target.userId, `mob_${crypto.randomUUID()}`, 'MONSTER_ATTACK', { hp: -damage });
@@ -1081,7 +1137,7 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
   }
 
   cluster?.bind?.({ runtime, command: commandLocal, disconnect: disconnectLocal });
-  return { command, commandLocal, disconnect, disconnectLocal, runtime, stop, drain, catalogChanged, close: async () => { stop(); await drain(); } };
+  return { command, commandLocal, disconnect, disconnectLocal, runtime, stop, drain, catalogChanged, worldChanged, close: async () => { stop(); await drain(); } };
 }
 
 module.exports = { createGameplayService };

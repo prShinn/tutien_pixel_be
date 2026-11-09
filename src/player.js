@@ -1,6 +1,6 @@
 const { DomainError } = require('./domain');
 const crypto = require('node:crypto');
-const { BALANCE, breakthroughThreshold } = require('./data/balance');
+const { breakthroughThreshold } = require('./data/balance');
 const { validateRequestId } = require('./inventory/inventory-service');
 
 const statKeys = ['str', 'agi', 'vit', 'ene'];
@@ -110,20 +110,6 @@ function createPlayerService({ store, catalog, world }) {
     const mutation = await store.allocateStats(userId, input.requestId, stat, amount);
     const player = decorate(mutation.player);
     return { ...mutation.result, derivedStats: player.derivedStats, player };
-  }
-
-  async function respawn(userId, input) {
-    validateRequestId(input?.requestId);
-    const current = await snapshot(userId);
-    const map = world.getByCode(current.mapCode) || world.getDefault();
-    if (!map) throw new DomainError('WORLD_NOT_FOUND', 'Chưa có bản đồ published', 503);
-    const mutation = await store.respawnPlayer(userId, input.requestId, {
-      mapCode: map.code,
-      x: Number(map.spawnX),
-      y: Number(map.spawnY),
-      ...BALANCE.death,
-    });
-    return { ...mutation.result, player: decorate(mutation.player) };
   }
 
   async function update(userId, playerId, input) {
