@@ -67,6 +67,8 @@ function makeTerrain(kind) {
   const objects = Array.from({ length: TILE_H }, () => Array(TILE_W).fill(-1));
   const elevation = Array.from({ length: TILE_H }, () => Array(TILE_W).fill(0));
   const city = kind === "thanh_van_tran";
+  const forest = kind === "thanh_van_ngoai_vuc";
+  const mountain = kind === "bach_van_son";
 
   for (let y = 0; y < TILE_H; y += 1) {
     for (let x = 0; x < TILE_W; x += 1) {
@@ -78,6 +80,14 @@ function makeTerrain(kind) {
       if (city) {
         if (moisture > .64 && detail > .16) objects[y][x] = 5;
         if (high > .74) { ground[y][x] = 1; objects[y][x] = 6; }
+      } else if (forest) {
+        if (high > .78) { ground[y][x] = 1; objects[y][x] = 6; }
+        else if (high > .69) ground[y][x] = 1;
+        else if (moisture > .47 && detail > .025) objects[y][x] = 5;
+      } else if (mountain) {
+        if (high > .58) ground[y][x] = 1;
+        if (high > .76) objects[y][x] = 6;
+        else if (moisture > .61 && detail > .08) objects[y][x] = 5;
       } else if (high > .72) {
         ground[y][x] = 1;
         objects[y][x] = 6;
@@ -131,6 +141,17 @@ function makeTerrain(kind) {
     }
     for (const [x, y, radius] of [[20, 200, 20], [80, 200, 24], [340, 280, 30], [500, 110, 26]]) {
       clearCircle(ground, objects, elevation, x, y, radius, 0);
+    }
+    if (forest) {
+      for (const [x, y, radius] of [[20, 200, 24], [150, 200, 22], [360, 280, 25], [460, 110, 26], [300, 200, 26], [590, 200, 24]]) {
+        clearCircle(ground, objects, elevation, x, y, radius, 0);
+      }
+    }
+    if (kind === "thanh_van_son_coc") clearCircle(ground, objects, elevation, 590, 200, 48, 0);
+    if (mountain) {
+      for (const [x, y, radius] of [[36, 200, 28], [300, 130, 22], [400, 300, 24], [500, 200, 28]]) {
+        clearCircle(ground, objects, elevation, x, y, radius, 0);
+      }
     }
   }
 
@@ -458,6 +479,7 @@ const monsterDefs = [
   { id: "DOC_THAO", code: "DOC_THAO", name: "Độc Thảo Yêu", icon: "🌱", img: "./assets/monsters/doc_thao_sheet.png", animation: { kind: "grid", cols: 4, rows: 4, width: 18, height: 21 }, type: "ELITE", level: 3, linhCan: "MOC", nguHanh: ["MOC"], color: "#33aa66", hp: 180, maxHp: 180, mp: 45, maxMp: 45, atk: 16, def: 6, speed: 0.85, spawnX: 500, spawnY: 110, lootTableId: "THAO_LOOT" },
   { id: "XICH_LUYEN_HO", code: "XICH_LUYEN_HO", name: "Xích Luyện Hổ", icon: "🐯", img: "./assets/monsters/hoang_soi_sheet.png", animation: { kind: "grid", cols: 4, rows: 4, width: 18, height: 18 }, type: "ELITE", level: 4, linhCan: "HOA", nguHanh: ["HOA"], color: "#d66a3d", hp: 280, maxHp: 280, mp: 60, maxMp: 60, atk: 22, def: 8, speed: 1.05, respawnMs: 30000, lootTableId: "HO_LUYEN_LOOT" },
   { id: "HUYET_NGUYET_LANG", code: "HUYET_NGUYET_LANG", name: "Huyết Nguyệt Lang", icon: "🐺", img: "./assets/monsters/hoang_soi_sheet.png", animation: { kind: "grid", cols: 4, rows: 4, width: 20, height: 20 }, type: "BOSS", level: 7, linhCan: "AM", nguHanh: ["AM"], color: "#d43f72", hp: 720, maxHp: 720, mp: 120, maxMp: 120, atk: 34, def: 14, speed: 1.15, respawnMs: 90000, lootTableId: "HUYET_LANG_LOOT" },
+  { id: "BOSS_TAN_THU", code: "BOSS_TAN_THU", name: "Trấn Quan Tân Thủ", icon: "🐗", img: "./assets/monsters/tho_heo_sheet.png", animation: { kind: "grid", cols: 4, rows: 4, width: 19, height: 17 }, type: "BOSS", level: 5, linhCan: "THO", nguHanh: ["THO"], color: "#c97d46", hp: 520, maxHp: 520, mp: 80, maxMp: 80, atk: 18, def: 8, speed: 0.82, respawnMs: 60000, lootTableId: "BOSS_TAN_THU_LOOT" },
 ];
 
 const lootTables = {
@@ -498,6 +520,11 @@ const lootTables = {
     { itemId: "WEAPON_TRUC_KIEM", chance: 0.25, min: 1, max: 1 },
     { itemId: "RING_THACH_ANH", chance: 0.2, min: 1, max: 1 },
   ],
+  BOSS_TAN_THU_LOOT: [
+    { itemId: "STONE_LINH_NHO", chance: 0.9, min: 2, max: 4 },
+    { itemId: "MAT_THAO_DUOC", chance: 0.8, min: 3, max: 5 },
+    { itemId: "POTION_TIEU_HOAN", chance: 0.35, min: 1, max: 2 },
+  ],
 };
 
 const monsterSpawns = [
@@ -512,6 +539,8 @@ const monsterSpawns = [
 const cityTerrain = makeTerrain("thanh_van_tran");
 const plainTerrain = makeTerrain("binh_nguyen");
 const valleyTerrain = makeTerrain("thanh_van_son_coc");
+const forestTerrain = makeTerrain("thanh_van_ngoai_vuc");
+const mountainTerrain = makeTerrain("bach_van_son");
 
 const worlds = [
   {
@@ -520,7 +549,7 @@ const worlds = [
     layers: { ground: cityTerrain.ground, objects: cityTerrain.objects, elevation: cityTerrain.elevation },
     portals: [
       { id: "portal_binh_nguyen", x: 590, y: 200, toMap: "binh_nguyen", denMap: "binh_nguyen", toX: 36, toY: 200, tenMapDen: "Bình Nguyên Hoang Dã" },
-      { id: "portal_son_coc", x: 300, y: 15, toMap: "thanh_van_son_coc", denMap: "thanh_van_son_coc", toX: 300, toY: 375, tenMapDen: "Sơn Cốc Thanh Vân" },
+      { id: "portal_son_coc", x: 300, y: 15, toMap: "thanh_van_son_coc", denMap: "thanh_van_son_coc", toX: 300, toY: 375, tenMapDen: "Sơn Cốc Thanh Vân", requiredQuestId: "novice-06-forest-herbs", lockedMessage: "Hãy hoàn thành hành trình hái linh thảo ở Rừng Rậm trước." },
     ],
     monsters: [
       { id: "MOC_NHAN", code: "MOC_NHAN", name: "Mộc Nhân Thung", icon: "🪵", img: "./assets/monsters/doc_thao_sheet.png", animation: { kind: "grid", cols: 4, rows: 4, width: 16, height: 16 }, type: "NORMAL", level: 1, nguHanh: ["MOC"], color: "#b3895d", hp: 60, maxHp: 60, atk: 2, def: 1, speed: 0.6, spawnX: 315, spawnY: 215, lootTableId: "MOC_NHAN_LOOT" }
@@ -542,7 +571,8 @@ const worlds = [
     layers: { ground: plainTerrain.ground, objects: plainTerrain.objects, elevation: plainTerrain.elevation },
     portals: [
       { id: "portal_thanh_van", x: 12, y: 200, toMap: "thanh_van_tran", denMap: "thanh_van_tran", toX: 565, toY: 200, tenMapDen: "Thanh Vân Trấn" },
-      { id: "portal_son_coc", x: 590, y: 200, toMap: "thanh_van_son_coc", denMap: "thanh_van_son_coc", toX: 36, toY: 200, tenMapDen: "Sơn Cốc Thanh Vân" },
+      { id: "portal_son_coc", x: 590, y: 200, toMap: "thanh_van_son_coc", denMap: "thanh_van_son_coc", toX: 36, toY: 200, tenMapDen: "Sơn Cốc Thanh Vân", requiredQuestId: "novice-06-forest-herbs", lockedMessage: "Hãy hoàn thành hành trình hái linh thảo ở Rừng Rậm trước." },
+      { id: "portal_rung_ram", x: 300, y: 200, toMap: "thanh_van_ngoai_vuc", denMap: "thanh_van_ngoai_vuc", toX: 300, toY: 200, tenMapDen: "Rừng Rậm Thanh Vân" },
     ],
     monsters: monsterDefs.filter((m) => ["HOANG_SOI", "THO_HEO", "DOC_THAO"].includes(m.code)),
     monsterSpawns: monsterSpawns.filter((s) => ["PACK_HOANG_SOI", "PACK_THO_HEO", "PACK_DOC_THAO"].includes(s.packId)),
@@ -551,22 +581,58 @@ const worlds = [
     ],
   },
   {
-    id: "thanh_van_son_coc", code: "thanh_van_son_coc", tenMap: "Sơn Cốc Thanh Vân", type: "MOUNTAIN_FOOTHILL", biome: "MOUNTAIN_FOOTHILL", version: 3, w: TILE_W, h: TILE_H, isDefault: false, spawnX: 300, spawnY: 375,
+    id: "thanh_van_ngoai_vuc", code: "thanh_van_ngoai_vuc", tenMap: "Rừng Rậm Thanh Vân", type: "FOREST", biome: "FOREST", status: "PUBLISHED", version: 1, w: TILE_W, h: TILE_H, isDefault: false, spawnX: 300, spawnY: 200,
+    jsonMap: forestTerrain.collision,
+    layers: { ground: forestTerrain.ground, objects: forestTerrain.objects, elevation: forestTerrain.elevation },
+    portals: [
+      { id: "portal_ve_binh_nguyen", x: 20, y: 200, toMap: "binh_nguyen", denMap: "binh_nguyen", toX: 300, toY: 200, tenMapDen: "Bình Nguyên Hoang Dã" },
+      { id: "portal_son_coc", x: 590, y: 200, toMap: "thanh_van_son_coc", denMap: "thanh_van_son_coc", toX: 36, toY: 200, tenMapDen: "Sơn Cốc Thanh Vân", requiredQuestId: "novice-06-forest-herbs", lockedMessage: "Hãy hoàn thành hành trình hái linh thảo ở Rừng Rậm trước." },
+    ],
+    monsters: monsterDefs.filter((m) => ["HOANG_SOI", "THO_HEO", "DOC_THAO"].includes(m.code)),
+    monsterSpawns: [
+      { packId: "PACK_RUNG_HOANG_SOI", templateId: "HOANG_SOI", centerX: 150, centerY: 200, count: 4, radius: 18, aggroRange: 38, leashDistance: 72, chaseDurationMs: 7500 },
+      { packId: "PACK_RUNG_THO_HEO", templateId: "THO_HEO", centerX: 360, centerY: 280, count: 3, radius: 18, aggroRange: 38, leashDistance: 72, chaseDurationMs: 7500 },
+      { packId: "PACK_RUNG_DOC_THAO", templateId: "DOC_THAO", centerX: 460, centerY: 110, count: 4, radius: 18, aggroRange: 40, leashDistance: 80, chaseDurationMs: 8500 },
+    ],
+    npcs: [
+      { id: "npc_lam_tuan_su", name: "Lâm Tuần Sứ Trình Phong", x: 285, y: 185, color: "#6dbd72", dialog: "Rừng Rậm Thanh Vân có Bạch Linh Thảo mọc ven lối mòn. Hạ Độc Thảo Yêu rồi thu thập linh thảo, đừng để chúng kéo đạo hữu vào bụi rậm!" },
+    ],
+  },
+  {
+    id: "thanh_van_son_coc", code: "thanh_van_son_coc", tenMap: "Sơn Cốc Thanh Vân", type: "MOUNTAIN_FOOTHILL", biome: "MOUNTAIN_FOOTHILL", status: "PUBLISHED", version: 3, w: TILE_W, h: TILE_H, isDefault: false, spawnX: 300, spawnY: 375,
     jsonMap: valleyTerrain.collision,
     layers: { ground: valleyTerrain.ground, objects: valleyTerrain.objects, elevation: valleyTerrain.elevation },
     portals: [
       { id: "portal_ve_thanh_van", x: 300, y: 388, toMap: "thanh_van_tran", denMap: "thanh_van_tran", toX: 300, toY: 35, tenMapDen: "Thanh Vân Trấn" },
       { id: "portal_ve_binh_nguyen", x: 12, y: 200, toMap: "binh_nguyen", denMap: "binh_nguyen", toX: 565, toY: 200, tenMapDen: "Bình Nguyên Hoang Dã" },
+      { id: "portal_ve_rung_ram", x: 36, y: 200, toMap: "thanh_van_ngoai_vuc", denMap: "thanh_van_ngoai_vuc", toX: 565, toY: 200, tenMapDen: "Rừng Rậm Thanh Vân" },
+      { id: "portal_bach_van_son", x: 590, y: 200, toMap: "bach_van_son", denMap: "bach_van_son", toX: 36, toY: 200, tenMapDen: "Bạch Vân Sơn", requiredQuestId: "novice-12-gate-boss", lockedMessage: "Cửa ải chưa mở. Hãy đánh bại Trấn Quan Tân Thủ trước." },
     ],
-    monsters: monsterDefs.filter((m) => ["DOC_THAO", "XICH_LUYEN_HO", "HUYET_NGUYET_LANG"].includes(m.code)),
+    monsters: monsterDefs.filter((m) => ["DOC_THAO", "XICH_LUYEN_HO", "HUYET_NGUYET_LANG", "BOSS_TAN_THU"].includes(m.code)),
     monsterSpawns: [
       { packId: "PACK_COC_DOC_THAO", templateId: "DOC_THAO", centerX: 180, centerY: 200, count: 4, radius: 20, aggroRange: 42, leashDistance: 88, chaseDurationMs: 9000 },
       { packId: "PACK_COC_XICH_HO", templateId: "XICH_LUYEN_HO", centerX: 350, centerY: 180, count: 3, radius: 22, aggroRange: 38, leashDistance: 80, chaseDurationMs: 7500 },
       { packId: "PACK_COC_BOSS_LANG", templateId: "HUYET_NGUYET_LANG", centerX: 480, centerY: 220, count: 1, radius: 6, aggroRange: 50, leashDistance: 120, chaseDurationMs: 12000 },
+      { packId: "PACK_COC_BOSS_TAN_THU", templateId: "BOSS_TAN_THU", centerX: 548, centerY: 200, count: 1, radius: 5, aggroRange: 48, leashDistance: 64, chaseDurationMs: 8500 },
     ],
     npcs: [
       { id: "npc_an_cu", name: "Tu Sĩ Ẩn Cư", x: 310, y: 190, color: "#ecf0f1", dialog: "Sơn cốc này linh khí u ám, sâu trong rừng có Xích Luyện Hổ và Huyết Nguyệt Lang vương cực kỳ nguy hiểm. Chưa đạt Khí Động kỳ chớ dại dột khiêu chiến!" },
     ],
+  },
+  {
+    id: "bach_van_son", code: "bach_van_son", tenMap: "Bạch Vân Sơn", type: "MOUNTAIN", biome: "MOUNTAIN", status: "PUBLISHED", version: 1, w: TILE_W, h: TILE_H, isDefault: false, spawnX: 36, spawnY: 200,
+    jsonMap: mountainTerrain.collision,
+    layers: { ground: mountainTerrain.ground, objects: mountainTerrain.objects, elevation: mountainTerrain.elevation },
+    portals: [
+      { id: "portal_ve_son_coc", x: 12, y: 200, toMap: "thanh_van_son_coc", denMap: "thanh_van_son_coc", toX: 565, toY: 200, tenMapDen: "Sơn Cốc Thanh Vân" },
+    ],
+    monsters: monsterDefs.filter((m) => ["DOC_THAO", "XICH_LUYEN_HO", "HUYET_NGUYET_LANG"].includes(m.code)),
+    monsterSpawns: [
+      { packId: "PACK_BACH_VAN_DOC_THAO", templateId: "DOC_THAO", centerX: 300, centerY: 130, count: 4, radius: 22, aggroRange: 42, leashDistance: 86, chaseDurationMs: 8500 },
+      { packId: "PACK_BACH_VAN_XICH_HO", templateId: "XICH_LUYEN_HO", centerX: 400, centerY: 300, count: 3, radius: 24, aggroRange: 42, leashDistance: 88, chaseDurationMs: 9000 },
+      { packId: "PACK_BACH_VAN_HUYET_LANG", templateId: "HUYET_NGUYET_LANG", centerX: 500, centerY: 200, count: 1, radius: 8, aggroRange: 56, leashDistance: 115, chaseDurationMs: 12000 },
+    ],
+    npcs: [],
   },
 ];
 

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { createInventoryService } = require('../src/inventory/inventory-service');
 const { createCultivationService } = require('../src/cultivation/cultivation-service');
 const { createSkillService } = require('../src/skills/skill-service');
-const { validateWorld } = require('../src/admin/admin-world-service');
+const { createAdminWorldService, validateWorld } = require('../src/admin/admin-world-service');
 const { createPlayerService } = require('../src/player');
 const { publicPlayer } = require('../src/domain');
 const { errorHandler } = require('../src/http/error-handler');
@@ -104,6 +104,52 @@ test('world validation catches spawn outside map and rejects malformed layer dim
   assert.equal(result.valid, false);
   assert.ok(result.errors.some((message) => message.includes('spawn')));
   assert.ok(result.errors.some((message) => message.includes('layers.ground')));
+});
+
+test('published map saves notify the realtime world-change hook after persistence', async () => {
+  const initial = {
+    id: 'test_map',
+    code: 'test_map',
+    tenMap: 'Test map',
+    type: 'PLAIN',
+    status: 'PUBLISHED',
+    version: 1,
+    w: 2,
+    h: 2,
+    spawnX: 0,
+    spawnY: 0,
+    jsonMap: [[0, 0], [0, 0]],
+    portals: [],
+    npcs: [],
+    monsters: [],
+    monsterSpawns: [],
+  };
+  const documents = [structuredClone(initial)];
+  const world = {
+    listAdminWorlds: () => documents.map((entry) => structuredClone(entry)),
+    getByCode: (code) => {
+      const map = documents.find((entry) => entry.code === code);
+      return map && map.status !== 'DRAFT' && map.status !== 'DELETED' ? map : null;
+    },
+    setWorld(map) {
+      const index = documents.findIndex((entry) => entry.code === map.code);
+      if (index < 0) documents.push(structuredClone(map));
+      else documents[index] = structuredClone(map);
+    },
+  };
+  const store = {
+    async saveAdminWorlds(_actorId, updated) {
+      for (const map of updated) world.setWorld(map);
+      return updated.map((entry) => structuredClone(entry));
+    },
+  };
+  const changes = [];
+  const service = createAdminWorldService({ store, world, onWorldChange: (code, map) => changes.push({ code, version: map?.version ?? null }) });
+
+  await service.update('test_map', { tenMap: 'Updated map' }, 'admin');
+  assert.deepEqual(changes, [{ code: 'test_map', version: 2 }]);
+  await service.update('test_map', { status: 'DRAFT' }, 'admin');
+  assert.equal(changes.length, 1, 'unpublished maps are not pushed into gameplay rooms');
 });
 
 test('player creation ignores client-controlled wallet, location, vitals and progression', async () => {

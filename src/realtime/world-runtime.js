@@ -114,11 +114,54 @@ function createWorldRuntime({ world, catalog = null }) {
     return monsters;
   }
 
+  function syncWorld(mapCode) {
+    const room = rooms.get(mapCode);
+    const map = world.getByCode(mapCode);
+    if (!room || !map) return null;
+
+    const runtimeFields = ['id', 'x', 'y', 'nextAttackAt', 'state', 'statusEffects', 'targetId', 'dead', 'respawnAt'];
+    const previousById = room.monsters;
+    const nextMonsters = new Map();
+    for (const desired of monstersFor(map)) {
+      const current = previousById.get(desired.id);
+      const sameSpawn = current
+        && current.templateId === desired.templateId
+        && current.spawnX === desired.spawnX
+        && current.spawnY === desired.spawnY
+        && current.packId === desired.packId;
+      if (!sameSpawn) {
+        nextMonsters.set(desired.id, desired);
+        continue;
+      }
+
+      const previousMaxHp = Math.max(1, Number(current.maxHp || current.hp || 1));
+      const healthRatio = Math.max(0, Math.min(1, Number(current.hp || 0) / previousMaxHp));
+      const state = Object.fromEntries(runtimeFields.map((key) => [key, current[key]]));
+      Object.assign(current, structuredClone(desired), state);
+      current.maxHp = Math.max(1, Number(desired.maxHp || desired.hp || previousMaxHp));
+      current.hp = current.dead ? 0 : Math.max(1, Math.min(current.maxHp, Math.round(healthRatio * current.maxHp)));
+      spawnRules.set(current, structuredClone(spawnRules.get(desired) || {}));
+      nextMonsters.set(current.id, current);
+    }
+
+    room.monsters = nextMonsters;
+    room.mapVersion = Number(map.version || 0);
+    return {
+      mapCode,
+      version: room.mapVersion,
+      monsters: [...room.monsters.values()].map(publicMonster),
+      groundItems: [...room.groundItems.values()],
+    };
+  }
+
   function roomFor(mapCode) {
     let room = rooms.get(mapCode);
     const map = world.getByCode(mapCode);
     if (!map) return null;
-    if (room && room.mapVersion === Number(map.version || 0)) return room;
+    if (room) {
+      if (room.mapVersion !== Number(map.version || 0)) syncWorld(mapCode);
+      return room;
+    }
     room = {
       mapCode,
       mapVersion: Number(map.version || 0),
@@ -168,6 +211,7 @@ function createWorldRuntime({ world, catalog = null }) {
 
   return {
     getRoom: roomFor,
+    syncWorld,
     enter(mapCode, player, socketId) {
       const room = roomFor(mapCode);
       if (!room) return null;

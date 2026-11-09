@@ -18,6 +18,7 @@ function createPlayerRouter({ auth, players }) {
     return res.status(201).json({ ...player, player });
   }));
   router.post('/stats/allocate', asyncRoute(async (req, res) => res.json(await players.allocateStats(req.auth.sub, req.body))));
+  router.post('/respawn', asyncRoute(async (req, res) => res.json(await players.respawn(req.auth.sub, req.body))));
   router.put('/:id', asyncRoute(async (req, res) => res.json(await players.update(req.auth.sub, req.params.id, req.body))));
 
   return router;

@@ -38,6 +38,14 @@ Account, player, wallet/ledger, inventory/equipment/skills, quest, admin overrid
 
 `SIGINT`/`SIGTERM` đóng Socket.IO/HTTP listener, Redis adapter clients (nếu đã bật) và pool MySQL một cách tuần tự. Có thể bật adapter room-broadcast bằng `REDIS_URL`; cấu hình Redis ACL/TLS trên mạng riêng. Socket.IO polling cần sticky sessions tại load balancer. Adapter không chia sẻ runtime game, vì vậy vẫn giữ một BE instance cho tới khi có world-state owner dùng chung và kiểm tra liên instance.
 
+## Prometheus metrics
+
+`GET /metrics` xuất Prometheus text format. Endpoint chỉ bật khi cấu hình `METRICS_TOKEN` dài tối thiểu 32 byte và yêu cầu `Authorization: Bearer <token>`; nếu chưa cấu hình trả 503, token sai trả 401. Scraper nên đi qua mạng nội bộ/TLS và lấy token từ secret store. Metrics hiện có request count và latency theo method/route template/status, process uptime/RSS/heap/CPU, event-loop delay và số kết nối Socket.IO. Không gắn user ID hoặc token vào label.
+
+## Background worker boundary
+
+Chưa bật BullMQ/RabbitMQ worker cho loot expiry hoặc monster respawn. Các `Map` của room, quái và drop chỉ tồn tại trong process BE; queue worker riêng không có quyền đọc hay mutate chúng. Redis Socket.IO adapter chỉ fan-out event, không phải runtime store. Interval 500 ms hiện vẫn chạy AI tick và kiểm tra respawn; vì vậy metrics event-loop lag cần được theo dõi khi tăng số map. Muốn chuyển scheduling sang worker an toàn cần chốt room runtime owner/shared state, job ID ổn định, idempotent command/ack, retry/recovery và readiness theo worker trước khi bật.
+
 `ADMIN_API_KEY` không còn được đọc; xóa biến này khỏi secret/environment của BE sau khi cập nhật FE admin sang JWT Bearer. Role `GM`/`ADMIN` do vận hành cấp trong MySQL, không qua đăng ký public.
 
 ## Capacity posture

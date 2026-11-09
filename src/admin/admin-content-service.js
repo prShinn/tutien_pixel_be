@@ -123,7 +123,7 @@ function createAdminContentService({ store, catalog, world, quests, onCatalogCha
     if (!EDITABLE.has(collection) && collection !== 'monsters') throw new DomainError('CONTENT_READ_ONLY', 'Nhóm nội dung này chỉ được xem', 403);
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new DomainError('INVALID_PAYLOAD', 'Nội dung không hợp lệ');
     if (collection === 'monsters') input = parseMonster(input, catalog);
-    if (collection === 'quests') input = validateQuestDefinition(input, catalog.listItems());
+    if (collection === 'quests') input = validateQuestDefinition(input, catalog.listItems(), world.listSummaries(), catalog.listMonsters());
     const id = recordId(collection, input);
     if (!id) throw new DomainError('CONTENT_ID_REQUIRED', 'Bản ghi cần có id hoặc code');
     if (await findRecord(collection, id)) throw new DomainError('CONTENT_EXISTS', 'Bản ghi đã tồn tại', 409);
@@ -141,7 +141,7 @@ function createAdminContentService({ store, catalog, world, quests, onCatalogCha
     if (input.id != null && recordId(collection, input) !== id) throw new DomainError('CONTENT_ID_MISMATCH', 'id trong body không khớp đường dẫn', 400);
     const previous = found.data;
     if (collection === 'monsters') input = parseMonster({ ...previous, ...input, id, code: previous.code || id }, catalog);
-    if (collection === 'quests') input = validateQuestDefinition({ ...previous, ...input, id }, catalog.listItems());
+    if (collection === 'quests') input = validateQuestDefinition({ ...previous, ...input, id }, catalog.listItems(), world.listSummaries(), catalog.listMonsters());
     const document = { ...previous, ...input, id: previous.id || id };
     const saved = await store.mutateAdminContent(actorId, collection, id, document, false, requestId, false, found.version);
     await publishChange(collection, id, saved);

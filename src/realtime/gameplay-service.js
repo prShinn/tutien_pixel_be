@@ -1,7 +1,7 @@
 const crypto = require('node:crypto');
 const { DomainError } = require('../domain');
 const { validateRequestId } = require('../inventory/inventory-service');
-const { BALANCE, deriveStats, mitigateDamage } = require('../data/balance');
+const { BALANCE, deriveStats, mitigateDamage, affinityProfile, affinityCritBonus, elementalStrength } = require('../data/balance');
 const { createWorldRuntime } = require('./world-runtime');
 const { findMonsterRoute, clearMonsterSegment } = require('./monster-route');
 
@@ -41,9 +41,57 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
     }
     for (const change of runtime.refreshAll()) io.to(roomName(change.mapCode)).emit('monster_spawn', { monster: change.monster });
     track(tickMonsters());
+    if (now - lastRegenAt >= 1000) {
+      lastRegenAt = now;
+      track(tickRegen());
+    }
   }, 500);
   runtimeTimer.unref?.();
   let monsterTickRunning = false;
+  let regenTickRunning = false;
+  let lastRegenAt = 0;
+
+  // buff_hp_regen / buff_mp_regen: hồi effectVal% maxHP/MP mỗi giây.
+  // buff_vitals: tổng effectVal% maxHP và maxMP, chia đều theo số giây của buff.
+  async function tickRegen() {
+    if (regenTickRunning) return;
+    regenTickRunning = true;
+    try {
+      for (const room of runtime.activeRooms()) {
+        for (const session of room.players.values()) {
+          if (!(Number(session.hp) > 0)) continue;
+          const buffs = currentBuffs(session);
+          const vitals = buffs.buff_vitals;
+          const vitalsPerSecond = vitals ? buffPercent(buffs, 'buff_vitals') / Math.max(1, Number(vitals.durationSec || 1)) : 0;
+          const hpRate = buffPercent(buffs, 'buff_hp_regen') + vitalsPerSecond;
+          const mpRate = buffPercent(buffs, 'buff_mp_regen') + vitalsPerSecond;
+          if (hpRate <= 0 && mpRate <= 0) {
+            session.regenCarryHp = 0;
+            session.regenCarryMp = 0;
+            continue;
+          }
+          const hpGain = Math.min(Math.max(0, Number(session.maxHp || 0) - Number(session.hp || 0)),
+            Number(session.maxHp || 0) * hpRate + Number(session.regenCarryHp || 0));
+          const mpGain = Math.min(Math.max(0, Number(session.maxMp || 0) - Number(session.mp || 0)),
+            Number(session.maxMp || 0) * mpRate + Number(session.regenCarryMp || 0));
+          const hp = Math.floor(hpGain);
+          const mp = Math.floor(mpGain);
+          session.regenCarryHp = hpGain - hp;
+          session.regenCarryMp = mpGain - mp;
+          if (hp <= 0 && mp <= 0) continue;
+          try {
+            const mutation = await store.updateVitals(session.userId, `regen_${crypto.randomUUID()}`, 'BUFF_REGEN', { hp, mp });
+            if (!(Number(session.hp) > 0)) continue; // chết trong lúc chờ DB: không hồi sinh qua regen
+            session.hp = Number(mutation.result.hp);
+            session.mp = Number(mutation.result.mp);
+            io.to(session.socketId).emit('player_state_update', { hp: session.hp, maxHp: session.maxHp, mp: session.mp, maxMp: session.maxMp, buffs: session.buffs });
+          } catch { /* tick sau sẽ thử lại */ }
+        }
+      }
+    } finally {
+      regenTickRunning = false;
+    }
+  }
 
   function requirePayload(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new DomainError('INVALID_PAYLOAD', 'Payload phải là object JSON');
@@ -166,7 +214,8 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
     for (const room of runtime.activeRooms()) {
       const previous = [...room.players.values()].find((entry) => entry.userId === socket.auth.sub && entry.socketId !== socket.id);
       if (!previous) continue;
-      await persistPosition(previous, true);
+      // Phiên đã tử vong không ghi đè vị trí hồi sinh do /player/respawn đặt.
+      if (Number(previous.hp) > 0) await persistPosition(previous, true);
       runtime.leave(previous.mapCode, previous.socketId);
       io.to(roomName(previous.mapCode)).emit('player_leave', { id: previous.socketId });
       const previousSocket = io.sockets?.sockets?.get(previous.socketId);
@@ -178,7 +227,7 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
     }
 
     if (session) {
-      await persistPosition(session, true);
+      if (Number(session.hp) > 0) await persistPosition(session, true);
       runtime.leave(session.mapCode, socket.id);
       socket.leave(roomName(session.mapCode));
       socket.to(roomName(session.mapCode)).emit('player_leave', { id: socket.id });
@@ -217,6 +266,10 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
     return session;
   }
 
+  function requireAlive(session) {
+    if (!(Number(session.hp) > 0)) throw new DomainError('PLAYER_DEAD', 'Nhân vật đã tử vong, hãy hồi sinh trước', 409);
+  }
+
   async function syncPlayerState(session) {
     const fresh = await players.snapshot(session.userId);
     Object.assign(session, {
@@ -244,6 +297,7 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
 
   async function movement(socket, payload) {
     const session = requireSession(socket);
+    requireAlive(session);
     const map = world.getByCode(session.mapCode);
     const x = payload.x;
     const y = payload.y;
@@ -305,6 +359,7 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
 
   async function changeMap(socket, payload) {
     let session = requireSession(socket);
+    requireAlive(session);
     const source = world.getByCode(session.mapCode);
     if (!source) throw new DomainError('WORLD_NOT_FOUND', 'Bản đồ hiện tại không tồn tại hoặc chưa publish', 404);
     const targetCode = typeof payload.mapCode === 'string' ? payload.mapCode.trim().toLowerCase() : '';
@@ -314,6 +369,20 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
     if (!portal) throw new DomainError('PORTAL_NOT_FOUND_OR_OUT_OF_RANGE', 'Hãy đứng gần cổng hợp lệ để chuyển bản đồ', 409);
     const target = world.getByCode(targetCode);
     if (!target) throw new DomainError('WORLD_NOT_FOUND', 'Bản đồ đích không tồn tại hoặc chưa publish', 404);
+    const progressionGate = target.code === 'thanh_van_son_coc'
+      ? { questId: 'novice-06-forest-herbs', statuses: ['completed'], message: 'Hãy hoàn thành hành trình hái linh thảo ở Rừng Rậm trước.' }
+      : target.code === 'bach_van_son'
+        ? { questId: 'novice-12-gate-boss', statuses: ['ready', 'completed'], message: 'Cửa ải chưa mở. Hãy đánh bại Trấn Quan Tân Thủ trước.' }
+        : null;
+    const requiredQuestId = progressionGate?.questId || portal.requiredQuestId;
+    if (requiredQuestId) {
+      const snapshot = await quests.snapshot(socket.auth.sub);
+      const requiredQuest = snapshot.quests.find((entry) => entry.id === requiredQuestId);
+      const allowedStatuses = progressionGate?.statuses || ['ready', 'completed'];
+      if (!requiredQuest || !allowedStatuses.includes(requiredQuest.status)) {
+        throw new DomainError('PORTAL_LOCKED', portal.lockedMessage || progressionGate?.message || 'Hoàn thành nhiệm vụ yêu cầu để mở cổng', 409);
+      }
+    }
     const destination = { x: Number(portal.toX), y: Number(portal.toY) };
     if (!walkable(target, destination.x, destination.y)) throw new DomainError('PORTAL_DESTINATION_BLOCKED', 'Điểm đến của cổng không thể đi được', 409);
 
@@ -340,6 +409,8 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
     await socket.join(roomName(target.code));
     const result = emitWorldInit(socket, session, persisted);
     socket.to(roomName(target.code)).emit('player_join', sessionDto(session));
+    try { await publishQuestEvent(socket, { type: 'map_enter', mapCode: target.code, count: 1 }); }
+    catch { /* The map transition is already committed; re-entry can retry quest progress. */ }
     return { mapCode: target.code, x: destination.x, y: destination.y, mapVersion: target.version, player: persisted, ...result };
   }
 
@@ -461,18 +532,32 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
           const miss = Math.random() < Math.max(0, Math.min(0.35, Number(derived.evasion || 0)));
           const magic = String(monster.attackType || '').toUpperCase() === 'MAGIC';
           const attack = magic ? (monster.mAtk ?? monster.atk) : monster.atk;
-          const rawDamage = Math.max(1, Number(attack || 1) + crypto.randomInt(0, 4));
-          const floorHp = Math.floor(Number(target.maxHp || 100) * 0.25);
+          // Nguyền rủa: quái bị curse giảm effectVal% lực tấn công (tối đa 75%).
+          const curse = activeStatus(monster, 'curse', now);
+          const curseFactor = curse ? 1 - Math.min(0.75, Math.max(0, Number(curse.value || 0)) / 100) : 1;
+          const rawDamage = Math.max(1, Math.floor((Number(attack || 1) + crypto.randomInt(0, 4)) * curseFactor));
           const buffs = currentBuffs(target);
           const passive = combatModifiers(target);
           const defense = (magic ? derived.mDef : derived.pDef) * (1 + buffPercent(buffs, 'buff_def') + passive.defensePct);
-          const shield = buffPercent(buffs, 'shield') * (1 + passive.shieldPct);
-          const mitigated = Math.ceil(mitigateDamage(rawDamage, defense) * (1 - Math.min(0.8, shield)));
-          const damage = miss ? 0 : Math.min(Math.max(0, Number(target.hp || 0) - floorHp), mitigated);
+          const mitigated = miss ? 0 : Math.ceil(mitigateDamage(rawDamage, defense));
+          // Khiên hộ thể là lớp hấp thụ: đỡ sát thương tới khi cạn hoặc hết giờ.
+          const shield = buffs.shield;
+          const absorbed = shield ? Math.min(Math.max(0, Math.floor(Number(shield.absorb || 0))), mitigated) : 0;
+          const damage = Math.min(Math.max(0, Number(target.hp || 0)), mitigated - absorbed);
           try {
             if (damage > 0) {
               const mutation = await store.updateVitals(target.userId, `mob_${crypto.randomUUID()}`, 'MONSTER_ATTACK', { hp: -damage });
               target.hp = Number(mutation.result.hp);
+            }
+            if (shield && absorbed > 0) {
+              shield.absorb = Math.max(0, Number(shield.absorb || 0) - absorbed);
+              if (shield.absorb <= 0) delete buffs.shield;
+            }
+            const died = !(Number(target.hp) > 0);
+            if (died) {
+              target.hp = 0;
+              target.buffs = {};
+              monster.targetId = null;
             }
             const dto = { ...monster, x: monster.x, y: monster.y, state: 'attack', targetId: target.socketId };
             io.to(roomName(room.mapCode)).emit('monster_update', { monsters: [dto] });
@@ -480,7 +565,9 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
               targetId: target.socketId,
               attackerId: monster.id,
               damage,
+              absorbed,
               miss,
+              dead: died,
               hp: target.hp,
               maxHp: target.maxHp,
             });
@@ -591,11 +678,16 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
     const raw = (attack * (skill ? 1.25 : 0.5) + scaling * (skill ? 1.5 : 0.5)) * multiplier;
     const curseBonus = session.linhCan === 'AM' && activeStatus(monster, 'curse') ? 1.08 : 1;
     const areaMultiplier = secondary ? BALANCE.damage.areaSecondaryMultiplier : 1;
-    const attackBuff = skill ? 1 : 1 + buffPercent(buffs, 'buff_atk');
-    let damage = Math.floor(mitigateDamage(raw * curseBonus * attackBuff * areaMultiplier, defense));
-    const critical = Math.random() < Math.max(0, Math.min(0.5, Number(derived.crit || 0) + buffPercent(buffs, 'buff_crit') + passive.critPct));
+    const attackBuff = 1 + buffPercent(buffs, 'buff_atk');
+    // Ngũ hành sinh khắc: linh căn người đánh vs linh căn quái, điều chỉnh theo chênh lệch cường độ (cùng công thức FE balance.js).
+    const monsterElement = monster.linhCan || monster.element || (Array.isArray(monster.nguHanh) ? monster.nguHanh[0] : monster.nguHanh);
+    const affinity = affinityProfile(session.linhCan, monsterElement, elementalStrength(session), elementalStrength(monster));
+    const affinityMultiplier = Number.isFinite(affinity.multiplier) ? affinity.multiplier : 1;
+    let damage = Math.floor(mitigateDamage(raw * curseBonus * attackBuff * areaMultiplier * affinityMultiplier, defense));
+    const critChance = Number(derived.crit || 0) + buffPercent(buffs, 'buff_crit') + passive.critPct + affinityCritBonus(affinity);
+    const critical = Math.random() < Math.max(0, Math.min(0.5, critChance));
     if (critical) damage = Math.floor(damage * 1.5);
-    return { damage: Math.max(1, damage), critical };
+    return { damage: Math.max(1, damage), critical, affinityRelation: affinity.relation, affinityMultiplier };
   }
 
   function spawnLoot(mapCode, monster) {
@@ -629,7 +721,7 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
     const drops = spawnLoot(mapCode, monster);
     let questState = null;
     try {
-      questState = await quests.applyEvent(userId, `evt_${crypto.randomUUID()}`, { type: 'monster_kill', monsterId: monster.templateId, count: 1 });
+      questState = await quests.applyEvent(userId, `evt_${crypto.randomUUID()}`, { type: 'monster_kill', monsterId: monster.templateId, mapCode, count: 1 });
       if (questState.changed) io.to(socketId).emit('quest_state_update', questState);
     } catch { questState = null; }
     return { drops, questState };
@@ -655,6 +747,7 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
     if (payload.mapCode != null && String(payload.mapCode).toLowerCase() !== session.mapCode) throw new DomainError('PLAYER_STATE_CHANGED', 'Bản đồ hiện tại không khớp', 409);
     const targetId = typeof payload.targetId === 'string' ? payload.targetId : '';
     if (!targetId || targetId.length > 100) throw new DomainError('INVALID_TARGET', 'Mục tiêu không hợp lệ');
+    requireAlive(session);
     const skill = payload.skillCode ? requirePlayerSkill(session, String(payload.skillCode)) : null;
     if (skill && Number(skill.satThuong || 0) <= 0) throw new DomainError('SKILL_REQUIRES_NO_TARGET', 'Kỹ năng này không dùng để tấn công mục tiêu', 409);
     const actionKey = skill ? `skill:${skill.code}` : 'basic';
@@ -735,8 +828,10 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
     const skillCode = typeof payload.skillCode === 'string' ? payload.skillCode.trim() : '';
     const skill = requirePlayerSkill(session, skillCode);
     if (Number(skill.satThuong || 0) > 0) throw new DomainError('SKILL_REQUIRES_TARGET', 'Kỹ năng tấn công cần chọn mục tiêu', 409);
+    requireAlive(session);
     const actionKey = `skill:${skill.code}`;
-    const cooldownMs = skillCooldownMs(session, skill, combatModifiers(session));
+    const passive = combatModifiers(session);
+    const cooldownMs = skillCooldownMs(session, skill, passive);
     const mpCost = Math.max(0, Math.floor(Number(skill.mpTieuHao || 0)));
     const effect = String(skill.effect || '').toLowerCase();
     const effectValue = Math.max(0, Number(skill.effectVal || 0));
@@ -758,7 +853,10 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
       const heal = Math.max(0, session.hp - before.hp);
       const mpRestore = Math.max(0, session.mp - (before.mp - mpCost));
       if (effect.startsWith('buff_') || ['shield', 'buff_def', 'buff_atk', 'buff_crit', 'buff_spd', 'buff_cast', 'buff_hp_regen', 'buff_mp_regen', 'buff_vitals'].includes(effect)) {
-        buffs[effect] = { value: effectValue, expiresAt: Date.now() + durationMs };
+        buffs[effect] = { value: effectValue, expiresAt: Date.now() + durationMs, durationSec: durationMs / 1000 };
+        if (effect === 'shield') {
+          buffs.shield.absorb = Math.max(1, Math.floor(Number(session.maxHp || 0) * effectValue / 100 * (1 + passive.shieldPct)));
+        }
       }
       const result = {
         skillCode,
@@ -784,6 +882,7 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
 
   async function pickup(socket, payload, requestId) {
     const session = requireSession(socket);
+    requireAlive(session);
     const dropId = typeof payload.itemId === 'string' ? payload.itemId.trim() : '';
     if (!dropId || dropId.length > 100) throw new DomainError('INVALID_DROP_ID', 'Mã vật phẩm rơi không hợp lệ');
     const drop = runtime.getDrop(session.mapCode, dropId);
@@ -796,7 +895,7 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
     io.to(roomName(session.mapCode)).emit('ground_loot_removed', { itemId: drop.id });
     socket.emit('ground_loot_picked', { item, player, loot: { items: [{ ...drop.item, count: drop.count }] } });
     let questState = null;
-    try { questState = await publishQuestEvent(socket, { type: 'collect_item', itemId: drop.itemCode, count: drop.count }); }
+    try { questState = await publishQuestEvent(socket, { type: 'collect_item', itemId: drop.itemCode, mapCode: session.mapCode, count: drop.count }); }
     catch { /* The inventory commit is authoritative even if quest progress needs a retry. */ }
     runtime.updatePlayer(session.mapCode, socket.id, { ...player, x: session.x, y: session.y, mapCode: session.mapCode, buffs: session.buffs, cooldowns: session.cooldowns });
     return { accepted: true, dropId: drop.id, player, questState };
@@ -858,7 +957,9 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
     if (!mapCode) return;
     const session = runtime.getPlayer(mapCode, socket.id);
     if (session) {
-      try { await persistPosition(session, true); } catch { /* keep the socket cleanup moving */ }
+      if (Number(session.hp) > 0) {
+        try { await persistPosition(session, true); } catch { /* keep the socket cleanup moving */ }
+      }
       runtime.leave(mapCode, socket.id);
       socket.to(roomName(mapCode)).emit('player_leave', { id: socket.id });
     }
@@ -880,6 +981,29 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
     }
   }
 
+  function worldChanged(mapCode) {
+    const change = runtime.syncWorld(mapCode);
+    const map = world.getByCode(mapCode);
+    if (!change || !map) return false;
+    change.groundItems = runtime.listDrops(mapCode);
+
+    for (const session of runtime.listPlayers(mapCode)) {
+      if (walkable(map, session.x, session.y)) continue;
+      const point = safeSpawn(map, session.x, session.y);
+      session.x = point.x;
+      session.y = point.y;
+      runtime.updatePlayer(mapCode, session.socketId, point);
+      (io.local || io).to(session.socketId).emit('movement_corrected', {
+        ...point,
+        reason: 'Vị trí được điều chỉnh theo địa hình bản đồ mới.',
+      });
+      void persistPosition(session, true).catch(() => {});
+    }
+
+    (io.local || io).to(roomName(mapCode)).emit('map_updated', change);
+    return true;
+  }
+
   function catalogChanged(collection, id, saved) {
     if (collection === "monsters") {
       monsterCatalogRevision = catalog.getMonsterRevision();
@@ -899,7 +1023,7 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
     }
   }
 
-  return { command, disconnect, runtime, stop, drain, catalogChanged, close: async () => { stop(); await drain(); } };
+  return { command, disconnect, runtime, stop, drain, catalogChanged, worldChanged, close: async () => { stop(); await drain(); } };
 }
 
 module.exports = { createGameplayService };

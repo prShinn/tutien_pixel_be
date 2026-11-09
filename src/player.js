@@ -1,6 +1,6 @@
 const { DomainError } = require('./domain');
 const crypto = require('node:crypto');
-const { breakthroughThreshold } = require('./data/balance');
+const { BALANCE, breakthroughThreshold } = require('./data/balance');
 const { validateRequestId } = require('./inventory/inventory-service');
 
 const statKeys = ['str', 'agi', 'vit', 'ene'];
@@ -112,6 +112,20 @@ function createPlayerService({ store, catalog, world }) {
     return { ...mutation.result, derivedStats: player.derivedStats, player };
   }
 
+  async function respawn(userId, input) {
+    validateRequestId(input?.requestId);
+    const current = await snapshot(userId);
+    const map = world.getByCode(current.mapCode) || world.getDefault();
+    if (!map) throw new DomainError('WORLD_NOT_FOUND', 'Chưa có bản đồ published', 503);
+    const mutation = await store.respawnPlayer(userId, input.requestId, {
+      mapCode: map.code,
+      x: Number(map.spawnX),
+      y: Number(map.spawnY),
+      ...BALANCE.death,
+    });
+    return { ...mutation.result, player: decorate(mutation.player) };
+  }
+
   async function update(userId, playerId, input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new DomainError('INVALID_PAYLOAD', 'Dữ liệu cập nhật không hợp lệ');
     const allowed = new Set(['name']);
@@ -123,7 +137,7 @@ function createPlayerService({ store, catalog, world }) {
     return decorate(await store.updatePlayerName(userId, playerId, name));
   }
 
-  return { create, snapshot, decorate, power, allocateStats, update };
+  return { create, snapshot, decorate, power, allocateStats, respawn, update };
 }
 
 module.exports = { createPlayerService };

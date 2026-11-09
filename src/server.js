@@ -16,6 +16,7 @@ const { createCatalogRouter } = require('./http/catalog-routes');
 const { errorHandler } = require('./http/error-handler');
 const { attachGameGateway } = require('./realtime/game-gateway');
 const { attachRedisAdapter } = require('./realtime/redis-adapter');
+const { createPrometheusMetrics } = require('./observability/prometheus-metrics');
 const { createGameplayService } = require('./realtime/gameplay-service');
 const { createCatalogService } = require('./catalog/catalog-service');
 const { createWorldService } = require('./world/world-service');
@@ -65,13 +66,13 @@ async function createApp() {
   const cultivation = createCultivationService({ store, catalog, players, inventory });
   const equipment = createEquipmentService({ store, catalog, players });
   const skills = createSkillService({ store, catalog, players });
-  const quests = createQuestService({ store, catalog, initialOverrides: questOverrides });
-  const adminWorlds = createAdminWorldService({ store, world });
+  const quests = createQuestService({ store, catalog, world, initialOverrides: questOverrides });
   const skillVfx = createSkillVfxService({ store, catalog });
   const shop = createShopService({ store, catalog, players });
   const app = express();
   const server = http.createServer(app);
   const io = new Server(server, { cors: { origin: config.corsOrigin, credentials: true } });
+  const metrics = createPrometheusMetrics({ token: config.metricsToken });
   let realtimeAdapter;
   try { realtimeAdapter = await attachRedisAdapter(io, config.redisUrl); }
   catch (error) { await store.close(); throw error; }
@@ -90,6 +91,8 @@ async function createApp() {
     res.once('finish', () => {
       const route = typeof req.route?.path === 'string' ? `${req.baseUrl}${req.route.path}` : req.path;
       const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+      const metricRoute = typeof req.route?.path === 'string' ? `${req.baseUrl}${req.route.path}` : 'unmatched';
+      metrics.observeRequest({ method: req.method, route: metricRoute, status: res.statusCode, durationSeconds: durationMs / 1000 });
       process.stdout.write(`${JSON.stringify({ level: res.statusCode >= 500 ? 'error' : 'info', event: 'http_request', requestId, method: req.method, route, status: res.statusCode, durationMs: Math.round(durationMs * 100) / 100 })}\n`);
     });
     next();
@@ -108,6 +111,15 @@ async function createApp() {
     if (realtimeAdapter.enabled) dependencies.redis = redisReady ? 'ready' : 'unavailable';
     if (!mysqlReady || !redisReady) return res.status(503).json({ ok: false, dependencies });
     return res.json({ ok: true, dependencies });
+  });
+  app.get('/metrics', (req, res) => {
+    if (!config.metricsToken) return res.status(503).json({ ok: false, error: 'Metrics chưa được bật', code: 'METRICS_DISABLED' });
+    if (!metrics.isAuthorized(req.get('authorization'))) {
+      return res.status(401).set('WWW-Authenticate', 'Bearer').json({ ok: false, error: 'Không được phép', code: 'UNAUTHORIZED' });
+    }
+    res.set('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+    res.set('Cache-Control', 'no-store');
+    return res.send(metrics.render({ socketCount: io.engine.clientsCount }));
   });
 
   app.use('/api/auth', createAuthRouter(auth, config));
@@ -129,11 +141,25 @@ async function createApp() {
       if (saved && catalog.applyAdminRecord(collection, id, saved)) gameplay.catalogChanged(collection, id, saved);
     }).catch(() => process.stderr.write('{"level":"error","event":"catalog_peer_refresh_failed"}\n'));
   });
+  const adminWorlds = createAdminWorldService({ store, world, onWorldChange(code) {
+    gameplay.worldChanged(code);
+    if (realtimeAdapter.enabled) io.serverSideEmit("admin_world_committed", code);
+  } });
+  if (realtimeAdapter.enabled) io.on("admin_world_committed", (code) => {
+    if (typeof code !== "string" || !/^[a-z0-9_-]{1,80}$/.test(code)) return;
+    void store.listAdminWorlds().then((documents) => {
+      const saved = documents.find((entry) => entry.code === code);
+      if (saved) world.setWorld(saved);
+      else world.removeWorld(code);
+      gameplay.worldChanged(code);
+    }).catch(() => process.stderr.write('{"level":"error","event":"world_peer_refresh_failed"}\n'));
+  });
   app.use('/api/admin', createAdminRouter({ auth, adminWorlds, adminContent, skillVfx }));
   app.use('/api/player', createPlayerRouter({ auth, players }));
   app.use('/api', (_req, res) => res.status(404).json({ ok: false, error: 'API không tồn tại', code: 'NOT_FOUND', message: 'API không tồn tại' }));
   app.use(errorHandler);
   attachGameGateway(io, { auth, gameplay });
+  metrics.start();
 
   return {
     app,
@@ -142,6 +168,7 @@ async function createApp() {
     store,
     async close() {
       gameplay.stop();
+      metrics.close();
       await new Promise((resolve) => io.close(resolve));
       await gameplay.drain();
       await realtimeAdapter.close();

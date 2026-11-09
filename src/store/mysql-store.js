@@ -362,6 +362,13 @@ function createMysqlStore(config) {
 
       if (action === 'accept') {
         if (quest.status !== 'available') throw new DomainError('QUEST_NOT_AVAILABLE', 'Nhiệm vụ này không thể nhận', 409);
+        if (definition.requiresQuestId) {
+          const [[prerequisite]] = await connection.query(
+            'SELECT status FROM player_quests WHERE player_id = ? AND quest_id = ? FOR UPDATE',
+            [player.id, definition.requiresQuestId],
+          );
+          if (prerequisite?.status !== 'completed') throw new DomainError('QUEST_LOCKED', 'Hoàn thành nhiệm vụ trước để mở khóa', 409);
+        }
         const status = definition.target === 0 ? 'ready' : 'active';
         await connection.execute('UPDATE player_quests SET status = ?, version = version + 1 WHERE player_id = ? AND quest_id = ?', [status, player.id, questId]);
         if (!meta.trackedId && status === 'active') meta.trackedId = questId;
@@ -414,7 +421,10 @@ function createMysqlStore(config) {
       const amount = Math.max(1, Math.min(99, Math.floor(Number(event.count) || 1)));
       let changed = false;
       for (const definition of definitions) {
-        if (definition.eventType !== event.type || (definition.targetItemId && definition.targetItemId !== String(event.itemId || ''))) continue;
+        if (definition.eventType !== event.type
+            || (definition.targetItemId && definition.targetItemId !== String(event.itemId || ''))
+            || (definition.targetMonsterId && definition.targetMonsterId !== String(event.monsterId || ''))
+            || (definition.targetMapCode && definition.targetMapCode !== String(event.mapCode || ''))) continue;
         const [[quest]] = await connection.query('SELECT status, progress FROM player_quests WHERE player_id = ? AND quest_id = ? FOR UPDATE', [player.id, definition.id]);
         if (quest.status !== 'active') continue;
         const progress = Math.min(definition.target, quest.progress + amount);
@@ -692,11 +702,24 @@ function createMysqlStore(config) {
     const intent = { operation: action, hp: changes.hp || 0, mp: changes.mp || 0, mpCost: changes.mpCost || 0 };
     return playerMutation(userId, requestId, intent, async (connection, player) => {
       if (player.mp < intent.mpCost) throw new DomainError('INSUFFICIENT_MP', 'Không đủ linh lực', 409);
-      const hp = Math.max(0, Math.min(player.maxHp, player.hp + intent.hp));
+      // Đã tử vong thì chỉ /player/respawn mới hồi được HP (regen/heal đến muộn không được hồi sinh).
+      const hp = player.hp <= 0 ? 0 : Math.max(0, Math.min(player.maxHp, player.hp + intent.hp));
       const mp = Math.max(0, Math.min(player.maxMp, player.mp - intent.mpCost + intent.mp));
       await connection.execute('UPDATE players SET hp = ?, mp = ? WHERE id = ?', [hp, mp, player.id]);
       return { hp, maxHp: player.maxHp, mp, maxMp: player.maxMp };
     }, { includeSnapshot: false, afterState: (result) => ({ hp: result.hp, mp: result.mp }) });
+  }
+
+  async function respawnPlayer(userId, requestId, { mapCode, x, y, respawnHpPct, respawnMpPct, tuViLossPct }) {
+    const intent = { operation: 'PLAYER_RESPAWN', mapCode, x, y };
+    return playerMutation(userId, requestId, intent, async (connection, player) => {
+      if (Number(player.hp) > 0) throw new DomainError('PLAYER_NOT_DEAD', 'Nhân vật chưa tử vong', 409);
+      const hp = Math.max(1, Math.floor(Number(player.maxHp) * respawnHpPct));
+      const mp = Math.max(0, Math.floor(Number(player.maxMp) * respawnMpPct));
+      const tuViLost = Math.max(0, Math.floor(Number(player.tuVi || 0) * tuViLossPct));
+      await connection.execute('UPDATE players SET hp = ?, mp = ?, tu_vi = GREATEST(0, tu_vi - ?), map_code = ?, x = ?, y = ? WHERE id = ?', [hp, mp, tuViLost, mapCode, x, y, player.id]);
+      return { hp, maxHp: player.maxHp, mp, maxMp: player.maxMp, tuViLost, mapCode, x, y };
+    });
   }
 
   async function pickupGroundItem(userId, requestId, dropId, itemCode, quantity) {
@@ -893,7 +916,7 @@ function createMysqlStore(config) {
     });
   }
 
-  return { init, healthCheck, findUserByUsername, findUserById, insertUser, saveRefreshToken, rotateRefreshToken, revokeRefreshToken, playerSnapshot, createPlayer, buyItem, sellItem, useInventoryItem, allocateStats, updatePlayerName, savePlayerPosition, updateVitals, pickupGroundItem, equipItem, unequipItem, learnSkill, equipSkills, replayBreakthrough, breakthrough, questSnapshot, questAction, applyQuestEvent, listAdminWorlds, saveAdminWorlds, deleteAdminWorld, listAdminContentRecords, pageAdminCatalog, getAdminContentRecord, listAdminAccounts, mutateAdminContent, listAdminSkillVfx, mutateSkillVfx, close: () => pool.end() };
+  return { init, healthCheck, findUserByUsername, findUserById, insertUser, saveRefreshToken, rotateRefreshToken, revokeRefreshToken, playerSnapshot, createPlayer, buyItem, sellItem, useInventoryItem, allocateStats, updatePlayerName, savePlayerPosition, updateVitals, respawnPlayer, pickupGroundItem, equipItem, unequipItem, learnSkill, equipSkills, replayBreakthrough, breakthrough, questSnapshot, questAction, applyQuestEvent, listAdminWorlds, saveAdminWorlds, deleteAdminWorld, listAdminContentRecords, pageAdminCatalog, getAdminContentRecord, listAdminAccounts, mutateAdminContent, listAdminSkillVfx, mutateSkillVfx, close: () => pool.end() };
 }
 
 module.exports = { createMysqlStore };

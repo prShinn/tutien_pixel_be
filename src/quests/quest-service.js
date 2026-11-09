@@ -3,10 +3,10 @@ const { validateRequestId } = require('../inventory/inventory-service');
 const { QUEST_DEFINITIONS } = require('./quest-catalog');
 
 const QUEST_ID = /^[a-z0-9_-]{1,64}$/;
-const EVENT_TYPES = new Set(['monster_kill', 'collect_item']);
+const EVENT_TYPES = new Set(['monster_kill', 'collect_item', 'map_enter']);
 const QUEST_CATEGORIES = new Set(['main', 'side', 'daily']);
 
-function validateQuestDefinition(input, items) {
+function validateQuestDefinition(input, items, worlds = [], monsters = []) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new DomainError('INVALID_QUEST', 'Dữ liệu nhiệm vụ không hợp lệ', 400);
   const quest = structuredClone(input);
   const integer = (value, min, max) => Number.isSafeInteger(value) && value >= min && value <= max;
@@ -23,12 +23,31 @@ function validateQuestDefinition(input, items) {
       || !Array.isArray(quest.rewards) || quest.rewards.length > 8) {
     throw new DomainError('INVALID_QUEST', 'Thông tin nhiệm vụ không hợp lệ', 400);
   }
-  if (quest.eventType === 'collect_item') {
+  if (quest.requiresQuestId != null
+      && (typeof quest.requiresQuestId !== 'string' || !QUEST_ID.test(quest.requiresQuestId) || quest.requiresQuestId === quest.id)) {
+    throw new DomainError('INVALID_QUEST_PREREQUISITE', 'Điều kiện tiên quyết không hợp lệ', 400);
+  }
+  if (quest.targetMapCode != null
+      && (typeof quest.targetMapCode !== 'string' || !worlds.some((entry) => entry.code === quest.targetMapCode))) {
+    throw new DomainError('INVALID_QUEST_TARGET_MAP', 'Bản đồ mục tiêu không có trong danh mục', 400);
+  }
+  if (quest.eventType === 'map_enter') {
+    if (typeof quest.targetMapCode !== 'string' || !worlds.some((entry) => entry.code === quest.targetMapCode)) {
+      throw new DomainError('INVALID_QUEST_TARGET_MAP', 'Bản đồ mục tiêu không có trong danh mục', 400);
+    }
+    delete quest.targetItemId;
+    delete quest.targetMonsterId;
+  } else if (quest.eventType === 'monster_kill') {
+    if (quest.targetMonsterId != null
+        && (typeof quest.targetMonsterId !== 'string' || !monsters.some((monster) => monster.id === quest.targetMonsterId || monster.code === quest.targetMonsterId))) {
+      throw new DomainError('INVALID_QUEST_TARGET_MONSTER', 'Quái vật mục tiêu không có trong danh mục', 400);
+    }
+    delete quest.targetItemId;
+  } else if (quest.eventType === 'collect_item') {
     if (typeof quest.targetItemId !== 'string' || !items.some((item) => item.id === quest.targetItemId || item.maDo === quest.targetItemId)) {
       throw new DomainError('INVALID_QUEST_TARGET_ITEM', 'Vật phẩm mục tiêu không có trong danh mục', 400);
     }
-  } else {
-    delete quest.targetItemId;
+    delete quest.targetMonsterId;
   }
   for (const reward of quest.rewards) {
     if (!reward || !['xu', 'tuVi', 'item'].includes(reward.type)
@@ -44,7 +63,7 @@ function validateQuestDefinition(input, items) {
   return quest;
 }
 
-function createQuestService({ store, catalog, initialOverrides = [] }) {
+function createQuestService({ store, catalog, world, initialOverrides = [] }) {
   let definitions = QUEST_DEFINITIONS.map((quest) => structuredClone(quest));
 
   function applyOverrides(records) {
@@ -52,7 +71,7 @@ function createQuestService({ store, catalog, initialOverrides = [] }) {
     for (const override of records || []) {
       if (!override || override.deleted) continue;
       try {
-        const quest = validateQuestDefinition(override.data, catalog.listItems());
+        const quest = validateQuestDefinition(override.data, catalog.listItems(), world?.listSummaries?.() || [], catalog.listMonsters());
         if (quest.id === override.id) next.set(quest.id, quest);
       } catch {}
     }

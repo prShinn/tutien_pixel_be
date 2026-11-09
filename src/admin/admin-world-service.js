@@ -77,7 +77,12 @@ function validateWorld(world, allWorlds) {
   return { valid: errors.length === 0, errors, warnings };
 }
 
-function createAdminWorldService({ store, world }) {
+function createAdminWorldService({ store, world, onWorldChange = () => {} }) {
+  function notifyWorldChange(code, document) {
+    try { onWorldChange(code, document); }
+    catch { process.stderr.write('{"level":"error","event":"world_notification_failed"}\n'); }
+  }
+
   function findRaw(code) {
     const document = world.listAdminWorlds().find((entry) => entry.code === code);
     if (!document) throw new DomainError('WORLD_NOT_FOUND', 'Bản đồ không tồn tại', 404);
@@ -91,7 +96,10 @@ function createAdminWorldService({ store, world }) {
 
   async function persist(actorId, documents, action, req) {
     const saved = await store.saveAdminWorlds(actorId, documents, action, req?.requestId || req?.get?.('x-request-id') || null);
-    for (const document of saved) world.setWorld(document);
+    for (const document of saved) {
+      world.setWorld(document);
+      if (world.getByCode(document.code)) notifyWorldChange(document.code, document);
+    }
     return saved;
   }
 
@@ -136,6 +144,7 @@ function createAdminWorldService({ store, world }) {
     if (incoming.length) throw new DomainError('WORLD_IN_USE', 'Không thể xóa map đang được portal khác tham chiếu', 409, { worlds: incoming.map((entry) => entry.code) });
     await store.deleteAdminWorld(actorId, code, req?.requestId || req?.get?.('x-request-id') || null);
     world.removeWorld(code);
+    notifyWorldChange(code, null);
     return { removed: document.code };
   }
 

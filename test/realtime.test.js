@@ -187,6 +187,44 @@ test('admin monster edits update live entities without resetting health or posit
   harness.gameplay.close();
 });
 
+test('admin map edits reconcile the active room and notify connected players', async (t) => {
+  const field = makeMap('field', {
+    monsters: [{ id: 'WOLF', code: 'WOLF', name: 'Old wolf', hp: 100, maxHp: 100, atk: 5, def: 1 }],
+    monsterSpawns: [{ packId: 'PACK_WOLF', templateId: 'WOLF', centerX: 5, centerY: 5, count: 1, radius: 2 }],
+  });
+  field.rules = { monsterPacksOnly: true };
+  const harness = makeHarness({ maps: [['field', field]] });
+  t.after(() => harness.gameplay.close());
+  const socket = fakeSocket();
+  await send(harness.gameplay, socket, 'map_join_0001', 'world.join');
+
+  const monster = harness.gameplay.runtime.getMonster('field', 'PACK_WOLF_0');
+  harness.gameplay.runtime.damageMonster('field', monster.id, 30);
+  harness.gameplay.runtime.addDrop('field', { id: 'drop_kept', itemCode: 'HERB', x: 2, y: 2, expiresAt: Date.now() + 5000 });
+  field.monsters = [{ id: 'WOLF', code: 'WOLF', name: 'Updated wolf', hp: 200, maxHp: 200, atk: 12, def: 3 }];
+  field.monsterSpawns = [{ ...field.monsterSpawns[0], count: 2 }];
+  field.jsonMap[1][1] = 2;
+  field.version += 1;
+
+  assert.equal(harness.gameplay.worldChanged('field'), true);
+  await harness.gameplay.drain();
+
+  const session = harness.gameplay.runtime.getPlayer('field', socket.id);
+  const liveMonsters = harness.gameplay.runtime.listMonsters('field');
+  const update = harness.broadcastEvents.find((event) => event.name === 'map_updated');
+  assert.equal(session.x, 5);
+  assert.equal(session.y, 5);
+  assert.equal(liveMonsters.length, 2);
+  assert.equal(liveMonsters[0].name, 'Updated wolf');
+  assert.equal(liveMonsters[0].hp, 140, 'same spawn should preserve its health ratio');
+  assert.equal(harness.gameplay.runtime.listDrops('field')[0].id, 'drop_kept');
+  assert.equal(update.payload.version, 2);
+  assert.equal(update.payload.monsters.length, 2);
+  assert.equal(update.payload.groundItems[0].id, 'drop_kept');
+  assert.ok(harness.broadcastEvents.some((event) => event.name === 'movement_corrected' && event.room === socket.id));
+  assert.ok(harness.store.saves.some((save) => save.x === 5 && save.y === 5));
+});
+
 test('world.join ignores client map and coordinates; movement clamps speed and stops at water', async () => {
   const field = makeMap('field', { blocked: true });
   const harness = makeHarness({ maps: [['field', field], ['other', makeMap('other')]] });
