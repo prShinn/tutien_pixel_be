@@ -22,8 +22,6 @@ const BALANCE = {
     ene: { mAtk: 4, mDef: 1.5, maxMp: 8 },
   },
   base: { pAtk: 8, mAtk: 8, pDef: 3, mDef: 3, hp: 100, mp: 50 },
-  // Tử vong: hồi sinh tại điểm spawn của map hiện tại, mất % tu vi cảnh giới hiện có.
-  death: { respawnHpPct: 0.5, respawnMpPct: 0.5, tuViLossPct: 0.05 },
   damage: {
     defenseBase: 100,
     critMultiplier: 1.5,
