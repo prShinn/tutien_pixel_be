@@ -166,6 +166,7 @@ function createWorldRuntime({ world, catalog = null }) {
       mapCode,
       mapVersion: Number(map.version || 0),
       players: new Map(),
+      orphanedPlayers: new Map(),
       monsters: new Map(monstersFor(map).map((monster) => [monster.id, monster])),
       groundItems: new Map(),
     };
@@ -211,7 +212,63 @@ function createWorldRuntime({ world, catalog = null }) {
 
   return {
     getRoom: roomFor,
-    syncWorld,
+    exportRoom(mapCode) {
+      const room = roomFor(mapCode);
+      if (!room) return null;
+      const players = new Map(room.orphanedPlayers || []);
+      for (const session of room.players.values()) {
+        if (!session.userId) continue;
+        players.set(String(session.userId), {
+          userId: String(session.userId),
+          buffs: structuredClone(session.buffs || {}),
+          cooldowns: [...(session.cooldowns instanceof Map ? session.cooldowns : new Map())],
+        });
+      }
+      return {
+        mapCode: room.mapCode,
+        mapVersion: room.mapVersion,
+        monsters: structuredClone([...room.monsters.values()]),
+        groundItems: structuredClone([...room.groundItems.values()]),
+        players: [...players.values()].map((player) => structuredClone(player)),
+      };
+    },
+    restoreRoom(mapCode, snapshot) {
+      rooms.delete(mapCode);
+      const room = roomFor(mapCode);
+      if (!room) return false;
+      if (!snapshot || snapshot.mapCode !== mapCode || Number(snapshot.mapVersion) !== room.mapVersion) return true;
+      if (Array.isArray(snapshot.monsters)) {
+        room.monsters = new Map(snapshot.monsters
+          .filter((monster) => monster && typeof monster.id === 'string')
+          .map((monster) => [monster.id, structuredClone(monster)]));
+      }
+      if (Array.isArray(snapshot.groundItems)) {
+        room.groundItems = new Map(snapshot.groundItems
+          .filter((drop) => drop && typeof drop.id === 'string' && Number(drop.expiresAt) > Date.now())
+          .map((drop) => [drop.id, structuredClone(drop)]));
+      }
+      if (Array.isArray(snapshot.players)) {
+        room.orphanedPlayers = new Map(snapshot.players
+          .filter((player) => player && player.userId != null)
+          .map((player) => [String(player.userId), {
+            userId: String(player.userId),
+            buffs: structuredClone(player.buffs || {}),
+            cooldowns: Array.isArray(player.cooldowns) ? structuredClone(player.cooldowns) : [],
+          }]));
+      }
+      return true;
+    },
+    takeOrphanedPlayer(mapCode, userId) {
+      const room = rooms.get(mapCode);
+      const player = room?.orphanedPlayers?.get(String(userId));
+      if (!player) return null;
+      room.orphanedPlayers.delete(String(userId));
+      return { buffs: structuredClone(player.buffs || {}), cooldowns: new Map(player.cooldowns || []) };
+    },
+    refreshRoom(mapCode) {
+      const room = roomFor(mapCode);
+      return room ? refreshMonsters(room).map((monster) => ({ mapCode, monster })) : [];
+    },
     enter(mapCode, player, socketId) {
       const room = roomFor(mapCode);
       if (!room) return null;
@@ -221,11 +278,13 @@ function createWorldRuntime({ world, catalog = null }) {
         playerId: player.id,
         socketId,
         mapCode,
-        movementBudget: 2.2,
+        movementBudget: 8.0,
         lastMovementAt: Date.now(),
         lastPersistAt: 0,
         persistRetryAt: 0,
         persistFailureCount: 0,
+        persistedPosition: { mapCode, x: Number(player.x), y: Number(player.y), positionVersion: Number(player.positionVersion || 1) },
+        positionStale: false,
         persistPromise: Promise.resolve(),
         cooldowns: player.cooldowns instanceof Map ? player.cooldowns : new Map(),
         buffs: player.buffs && typeof player.buffs === 'object' ? player.buffs : {},
@@ -299,6 +358,10 @@ function createWorldRuntime({ world, catalog = null }) {
       let removed = 0;
       for (const room of rooms.values()) removed += cleanupExpiredDrops(room, now);
       return removed;
+    },
+    cleanupExpiredDropsInRoom(mapCode, now = Date.now()) {
+      const room = rooms.get(mapCode);
+      return room ? cleanupExpiredDrops(room, now) : 0;
     },
     getMonster(mapCode, monsterId) {
       const room = rooms.get(mapCode);

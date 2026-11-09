@@ -27,7 +27,7 @@ function publicPlayer(player, wallet, inventory, equipment = {}, learnedSkills =
     hp: player.hp, maxHp: player.maxHp, mp: player.mp, maxMp: player.maxMp, mapCode: player.mapCode,
     mapId: player.mapCode, maCanhGioi: player.realmCode, tangTuVi: player.realmStage,
     tuViHienTai: player.tuVi,
-    x: player.x, y: player.y, version: player.version, stats: player.stats,
+    x: player.x, y: player.y, positionVersion: player.positionVersion, version: player.version, stats: player.stats,
     unspentStatPoints: player.unspentPoints || 0,
     derivedStats: player.derivedStats,
     wallet: { xu: wallet?.xu || 0, linhThach: wallet?.linhThach || 0 },

@@ -5,10 +5,11 @@ All REST errors are JSON `{ ok:false, error:string, code, details?, requestId? }
 - `INVALID_CREDENTIALS`, `USERNAME_TAKEN`, `UNAUTHORIZED`: authentication failed.
 - `INVALID_REFRESH_TOKEN`, `RATE_LIMITED`: refresh/revoke or authentication request limit failed.
 - `FORBIDDEN`: authenticated user lacks resource/admin permission.
-- `PLAYER_NOT_FOUND`, `PLAYER_EXISTS`, `PLAYER_CONFLICT`, `PLAYER_STATE_CHANGED`, `PLAYER_CONTENT_STALE`: player lookup/state conflict.
+- `PLAYER_NOT_FOUND`, `PLAYER_EXISTS`, `PLAYER_CONFLICT`, `PLAYER_STATE_CHANGED`, `PLAYER_CONTENT_STALE`, `PLAYER_NOT_DEAD`, `PLAYER_DEAD`: player lookup/state or respawn precondition failed.
 - `INVALID_PLAYER_NAME`, `INVALID_STATS`, `INVALID_GENDER`, `INVALID_ROOT`, `STARTING_CONTENT_UNAVAILABLE`: character creation failed.
 - `PLAYER_SNAPSHOT_WRITE_FORBIDDEN`: client attempted to mass-assign player state.
 - `INVALID_REQUEST_ID`, `IDEMPOTENCY_CONFLICT`: mutation key missing/invalid or already used for another intent.
+- `COMMAND_OUTCOME_UNKNOWN`, `COMMAND_IN_PROGRESS`, `ROOM_OWNER_UNAVAILABLE`, `ROOM_CLUSTER_UNAVAILABLE`: runtime command is being reconciled, an owner is unavailable, or Redis routing failed; reconnect/resync before retrying with a new request ID.
 - `ITEM_NOT_FOUND`, `ITEM_NOT_BUYABLE`, `ITEM_NOT_SELLABLE`, `ITEM_NOT_IN_INVENTORY`, `ITEM_NOT_ABSORBABLE`, `ITEM_USE_NOT_SUPPORTED`, `ITEM_HAS_NO_EFFECT`, `ITEM_NOT_EQUIPMENT`: item/catalog/use precondition failed.
 - `INVALID_ITEM_EFFECT`, `ROOT_CULTIVATION_CAPPED`: item effect is invalid or root cultivation cap reached.
 - `INVALID_QUANTITY`, `INVENTORY_FULL`, `INVENTORY_STACK_LIMIT`, `INSUFFICIENT_ITEM`: inventory mutation failed.

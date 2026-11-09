@@ -1,6 +1,6 @@
 # API V1
 
-BE phục vụ FE tại `D:\Setup\mine\tutien_pixel`. Access token là Bearer JWT 15 phút; refresh token ngẫu nhiên 48 byte, lưu dạng hash trong MySQL và xoay vòng sau mỗi lần refresh (30 ngày). Mutation gameplay/economy/quest yêu cầu `requestId`; retry đúng thao tác dùng lại cùng ID và payload, thao tác mới dùng ID mới. Admin resource edits ghi audit và nhận `requestId` tùy chọn.
+BE phục vụ FE tại `D:\Work\game\tu-tien-server\tutien_pixel`. Access token là Bearer JWT 15 phút; refresh token ngẫu nhiên 48 byte, lưu dạng hash trong MySQL và xoay vòng sau mỗi lần refresh (30 ngày). Mutation gameplay/economy/quest yêu cầu `requestId`; retry đúng thao tác dùng lại cùng ID và payload, thao tác mới dùng ID mới. Admin resource edits ghi audit và nhận `requestId` tùy chọn.
 
 ## Status và lỗi
 
@@ -101,6 +101,7 @@ Response excerpt sau commit (PlayerDTO đầy đủ còn có các alias compatib
 | GET | `/api/player/by-user/:userId` | Bearer, same owner | `PlayerDTO` |
 | GET | `/api/player/power` | Bearer | `{ combatPower }` |
 | POST | `/api/player` | `name`, optional `stats`, `gender`, `linhCan` | `PlayerDTO` and compatibility `{ player }` |
+| POST | `/api/player/respawn` | `requestId` | `{ ok, player, result }`; only a dead player can respawn |
 | PUT | `/api/player/:id` | `{ name }` only | `PlayerDTO`; owner required |
 | POST | `/api/player/stats/allocate` | `requestId`, `stat`, optional `amount` | `{ stats, unspentStatPoints, derivedStats, player }` |
 | GET | `/api/catalog/items` | - | `{ items }` (shop compatibility) |
@@ -115,6 +116,8 @@ Response excerpt sau commit (PlayerDTO đầy đủ còn có các alias compatib
 | PUT | `/api/player/skills/equip` | `requestId`, `skillCodes[]` | `{ equippedSkills, skills }` |
 
 Tạo nhân vật dùng user từ JWT. Server chỉ nhận tên, gender/root đã kiểm tra theo catalog và stats hợp lệ; map, spawn, cảnh giới, HP/MP, wallet, skills, equipment và inventory do server tạo. `PUT /api/player/:id` không mass-assign snapshot. `itemCode` nhận diện stack; không dùng chỉ số `index`.
+
+Hồi sinh dùng user từ JWT và `requestId` ổn định. Chỉ nhân vật có HP bằng 0 mới được hồi sinh; BE chọn điểm spawn của map mặc định, phục hồi HP/MP tối đa và commit vị trí/trạng thái trong một giao dịch có idempotency. Retry cùng request ID trả lại kết quả đã commit.
 
 PlayerDTO duy trì alias `jsonIventory`, `trangBi`, `equip_slot` trong giai đoạn tích hợp. Inventory/equipment/skill/tu vi/stats mutation dùng transaction MySQL, khóa player row, action ledger và idempotency record.
 
@@ -171,4 +174,4 @@ Handshake yêu cầu JWT trong `auth.token`. `game_command` envelope `{ requestI
 
 REST error JSON giữ `{ ok:false, error, code, details?, requestId? }`; `error` luôn là chuỗi tương thích `Net._fetch`. FE snapshot autosave hiện chưa được hỗ trợ: xem [FE_INTEGRATION_NOTE.md](FE_INTEGRATION_NOTE.md).
 
-Database hiện vẫn là MySQL/InnoDB. Cơ sở dữ liệu đã có cần chạy migration [20261104_player_progression.sql](../migrations/20261104_player_progression.sql) một lần; database mới import `schema.sql`. User/player/wallet/inventory/equipment/skill/quest/admin, refresh token, loot claim, ledgers và idempotency key được lưu trong MySQL. Presence, vị trí chưa flush, quái, drop, cooldown, buff và dedup của combat/chat chỉ nằm trong một process; chưa bật multi-instance.
+Database hiện vẫn là MySQL/InnoDB. Cơ sở dữ liệu đã có cần chạy lần lượt các migration trong [README](../README.md); database mới import `schema.sql`. User/player/wallet/inventory/equipment/skill/quest/admin, refresh token, loot claim, ledgers và idempotency key được lưu trong MySQL. Khi bật `REDIS_URL`, Redis điều phối owner theo map và lưu snapshot quái/drop/buff/cooldown; Socket.IO Redis adapter chuyển tiếp event. Không cấu hình Redis thì realtime chỉ chạy một process. Command replay cache được chia sẻ qua Redis; transaction mutations dùng idempotency MySQL.
