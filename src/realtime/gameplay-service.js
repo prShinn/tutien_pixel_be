@@ -70,6 +70,7 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
 
   // buff_hp_regen / buff_mp_regen: hồi effectVal% maxHP/MP mỗi giây.
   // buff_vitals: tổng effectVal% maxHP và maxMP, chia đều theo số giây của buff.
+  // Hồi MP tự nhiên (BALANCE.regen.mpPctPerSec) cộng thêm cho mọi người chơi còn sống.
   async function tickRegen() {
     if (regenTickRunning) return;
     regenTickRunning = true;
@@ -82,7 +83,9 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
           const vitals = buffs.buff_vitals;
           const vitalsPerSecond = vitals ? buffPercent(buffs, 'buff_vitals') / Math.max(1, Number(vitals.durationSec || 1)) : 0;
           const hpRate = buffPercent(buffs, 'buff_hp_regen') + vitalsPerSecond;
-          const mpRate = buffPercent(buffs, 'buff_mp_regen') + vitalsPerSecond;
+          const buffMpRate = buffPercent(buffs, 'buff_mp_regen') + vitalsPerSecond;
+          const buffActive = hpRate > 0 || buffMpRate > 0;
+          const mpRate = buffMpRate + Math.max(0, Number(BALANCE.regen?.mpPctPerSec) || 0);
           if (hpRate <= 0 && mpRate <= 0) {
             session.regenCarryHp = 0;
             session.regenCarryMp = 0;
@@ -97,8 +100,17 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
           session.regenCarryHp = hpGain - hp;
           session.regenCarryMp = mpGain - mp;
           if (hp <= 0 && mp <= 0) continue;
+          if (!buffActive) {
+            // Chỉ có hồi tự nhiên: gom tới một đợt (hoặc tới khi đầy MP) rồi mới ghi DB.
+            const missingMp = Math.max(0, Number(session.maxMp || 0) - Number(session.mp || 0));
+            const batch = Math.max(1, Math.ceil(Number(session.maxMp || 0) * (Number(BALANCE.regen?.mpFlushPct) || 0)));
+            if (mp < batch && mp < missingMp) {
+              session.regenCarryMp = mpGain;
+              continue;
+            }
+          }
           try {
-            const mutation = await store.updateVitals(session.userId, `regen_${crypto.randomUUID()}`, 'BUFF_REGEN', { hp, mp });
+            const mutation = await store.updateVitals(session.userId, `regen_${crypto.randomUUID()}`, buffActive ? 'BUFF_REGEN' : 'NATURAL_REGEN', { hp, mp });
             if (!(Number(session.hp) > 0)) continue; // chết trong lúc chờ DB: không hồi sinh qua regen
             session.hp = Number(mutation.result.hp);
             session.mp = Number(mutation.result.mp);

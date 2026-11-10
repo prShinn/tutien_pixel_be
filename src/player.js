@@ -42,7 +42,8 @@ function createPlayerService({ store, catalog, world }) {
       ...rootSkills.slice(0, 2),
       ...allSkills.filter((skill) => skill.linhCan === root.id && String(skill.category || '').toUpperCase() === 'PASSIVE'),
     ].map((skill) => skill.code);
-    const initialEquippedSkills = rootSkills.slice(0, 4).map((skill) => skill.code);
+    // Chỉ trang bị kỹ năng chủ động đã học (2 kỹ năng đầu của linh căn); ô 3-4 mở khi học thêm.
+    const initialEquippedSkills = rootSkills.slice(0, 2).map((skill) => skill.code);
     const created = await store.createPlayer(userId, {
       id: `plr_${crypto.randomUUID()}`,
       name,

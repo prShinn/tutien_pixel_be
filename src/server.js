@@ -33,6 +33,7 @@ const { createAdminWorldService } = require('./admin/admin-world-service');
 const { createAdminContentService } = require('./admin/admin-content-service');
 const { createSkillVfxService } = require('./admin/skill-vfx-service');
 const { createAdminRouter } = require('./http/admin-routes');
+const { createPrometheusMetrics } = require('./observability/prometheus-metrics');
 function mergeContentOverrides(base, overrides, key) {
   const records = new Map(base.map((record) => [String(key(record)), record]));
   for (const override of overrides) {

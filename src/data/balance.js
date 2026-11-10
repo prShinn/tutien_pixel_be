@@ -22,6 +22,9 @@ const BALANCE = {
     ene: { mAtk: 4, mDef: 1.5, maxMp: 8 },
   },
   base: { pAtk: 8, mAtk: 8, pDef: 3, mDef: 3, hp: 100, mp: 50 },
+  // Hồi MP tự nhiên khi còn sống: % maxMP mỗi giây. Gom đủ mpFlushPct maxMP (hoặc tới khi đầy)
+  // mới ghi DB một lần để không phát sinh mutation mỗi giây.
+  regen: { mpPctPerSec: 0.02, mpFlushPct: 0.05 },
   damage: {
     defenseBase: 100,
     critMultiplier: 1.5,
