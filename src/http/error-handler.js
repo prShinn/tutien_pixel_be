@@ -11,6 +11,7 @@ function errorHandler(error, req, res, _next) {
   const requestId = typeof candidateRequestId === 'string' && /^[a-zA-Z0-9_-]{8,80}$/.test(candidateRequestId)
     ? candidateRequestId
     : undefined;
+  if (status >= 500) process.stderr.write(`${JSON.stringify({ level: 'error', event: 'http_request_failed', method: req.method, path: req.path, requestId, code, errorMessage: error?.message, stack: error?.stack })}\n`);
   const body = { ok: false, error: message, code, message };
   if (error instanceof DomainError && error.details !== undefined) body.details = error.details;
   if (requestId) body.requestId = requestId;
