@@ -42,7 +42,8 @@ function createPlayerService({ store, catalog, world }) {
       ...rootSkills.slice(0, 2),
       ...allSkills.filter((skill) => skill.linhCan === root.id && String(skill.category || '').toUpperCase() === 'PASSIVE'),
     ].map((skill) => skill.code);
-    const initialEquippedSkills = rootSkills.slice(0, 4).map((skill) => skill.code);
+    // Chỉ trang bị kỹ năng chủ động đã học (2 kỹ năng đầu của linh căn); ô 3-4 mở khi học thêm.
+    const initialEquippedSkills = rootSkills.slice(0, 2).map((skill) => skill.code);
     const created = await store.createPlayer(userId, {
       id: `plr_${crypto.randomUUID()}`,
       name,
@@ -152,7 +153,19 @@ function createPlayerService({ store, catalog, world }) {
     return { ok: true, player: decorate(mutation.player), result: mutation.result };
   }
 
-  return { create, snapshot, decorate, power, allocateStats, update, respawn };
+  async function walletLedger(userId, query = {}) {
+    const currency = String(query?.currency || 'ALL').trim().toUpperCase();
+    if (!['ALL', 'XU', 'LINH_THACH'].includes(currency)) {
+      throw new DomainError('INVALID_CURRENCY', 'currency phải là ALL, XU hoặc LINH_THACH');
+    }
+    const limit = query?.limit == null ? 20 : Number(query.limit);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) {
+      throw new DomainError('INVALID_LIMIT', 'limit phải là số nguyên từ 1 đến 50');
+    }
+    return store.listWalletLedger(userId, { currency, limit, cursor: query?.cursor || null });
+  }
+
+  return { create, snapshot, decorate, power, allocateStats, update, respawn, walletLedger };
 }
 
 module.exports = { createPlayerService };

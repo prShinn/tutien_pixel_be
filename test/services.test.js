@@ -5,6 +5,7 @@ const { createCultivationService } = require('../src/cultivation/cultivation-ser
 const { createSkillService } = require('../src/skills/skill-service');
 const { createAdminWorldService, validateWorld } = require('../src/admin/admin-world-service');
 const { createPlayerService } = require('../src/player');
+const { calcDeathXuPenalty } = require('../src/data/balance');
 const { publicPlayer } = require('../src/domain');
 const { errorHandler } = require('../src/http/error-handler');
 const { createRateLimiter } = require('../src/http/rate-limit');
@@ -219,6 +220,33 @@ test('player respawn rejects an invalid spawn before writing state', async () =>
 
   await assert.rejects(service.respawn('u1', { requestId: 'respawn-123' }), { code: 'WORLD_NO_WALKABLE_SPAWN' });
   assert.equal(called, false);
+});
+
+test('death penalty charges 20 xu per realm stt capped at 500 without losing tu vi', async () => {
+  assert.equal(calcDeathXuPenalty(100, 1), 20);
+  assert.equal(calcDeathXuPenalty(15, 2), 15);
+  assert.equal(calcDeathXuPenalty(0, 5), 0);
+  assert.equal(calcDeathXuPenalty(999, 30), 500);
+  assert.equal(calcDeathXuPenalty(-10, Number.NaN), 0);
+
+  const start = { code: 'start_map', w: 4, h: 4, spawnX: 2, spawnY: 3, jsonMap: Array.from({ length: 4 }, () => [0, 0, 0, 0]) };
+  const realm = { stt: 2, code: 'KHI_DONG', tuViTienCap: 2000, tangTuVi: [{ stt: 1 }] };
+  const service = createPlayerService({
+    store: {
+      respawn: async () => ({
+        player: { id: 'p1', realmCode: realm.code, realmStage: 1, tuVi: 350, mapCode: start.code, xu: 60 },
+        result: { type: 'player_respawned', xu: 60, xuLost: 40, tuViLost: 0 },
+      }),
+    },
+    catalog: { getRealmByCode: () => realm, getRealmByStt: () => realm, getRootByCode: (code) => ({ code }), decoratePlayer: (player) => ({ ...player, dto: true }) },
+    world: { getDefault: () => start, getByCode: () => start },
+  });
+
+  const response = await service.respawn('u1', { requestId: 'respawn-fee-1' });
+  assert.equal(response.result.xuLost, 40);
+  assert.equal(response.result.tuViLost, 0);
+  assert.equal(response.result.xu, 60);
+  assert.equal(response.player.tuVi, 350);
 });
 
 test('PlayerDTO retains compatibility aliases and REST errors echo a valid requestId', () => {

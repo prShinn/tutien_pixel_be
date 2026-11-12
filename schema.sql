@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS players (
   map_code VARCHAR(64) NOT NULL, x DOUBLE NOT NULL, y DOUBLE NOT NULL,
   position_version BIGINT UNSIGNED NOT NULL DEFAULT 1, version BIGINT NOT NULL DEFAULT 1,
   str_stat INT NOT NULL DEFAULT 5, agi_stat INT NOT NULL DEFAULT 5, vit_stat INT NOT NULL DEFAULT 5,
-  ene_stat INT NOT NULL DEFAULT 5, unspent_points INT NOT NULL DEFAULT 0,
+  ene_stat INT NOT NULL DEFAULT 5, unspent_points INT NOT NULL DEFAULT 0, inventory_capacity INT UNSIGNED NOT NULL DEFAULT 40,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   CONSTRAINT fk_players_user FOREIGN KEY (user_id) REFERENCES users(id)
 ) ENGINE=InnoDB;
@@ -79,9 +79,12 @@ CREATE TABLE IF NOT EXISTS admin_audit_logs (
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), KEY ix_admin_audit_resource (resource, created_at)
 ) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS currency_ledger (
-  id VARCHAR(64) PRIMARY KEY, player_id VARCHAR(64) NOT NULL, reason VARCHAR(32) NOT NULL,
-  amount BIGINT NOT NULL, balance_after BIGINT NOT NULL, idempotency_key VARCHAR(80) NOT NULL,
+  id VARCHAR(64) PRIMARY KEY, player_id VARCHAR(64) NOT NULL, currency_type ENUM('XU', 'LINH_THACH') NOT NULL DEFAULT 'XU',
+  reason VARCHAR(32) NOT NULL, amount BIGINT NOT NULL, balance_after BIGINT NOT NULL,
+  reference_type VARCHAR(32) NULL, reference_id VARCHAR(64) NULL, idempotency_key VARCHAR(80) NOT NULL,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), UNIQUE KEY uq_ledger_idempotency (player_id, idempotency_key),
+  KEY ix_ledger_player_currency_time (player_id, currency_type, created_at, id),
+  KEY ix_ledger_player_time (player_id, created_at, id),
   CONSTRAINT fk_ledger_player FOREIGN KEY (player_id) REFERENCES players(id)
 ) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS idempotency_keys (
@@ -99,4 +102,60 @@ CREATE TABLE IF NOT EXISTS loot_pickups (
   drop_id VARCHAR(96) PRIMARY KEY, player_id VARCHAR(64) NOT NULL, item_code VARCHAR(64) NOT NULL,
   quantity INT UNSIGNED NOT NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   CONSTRAINT fk_loot_pickup_player FOREIGN KEY (player_id) REFERENCES players(id)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS player_mail (
+  id VARCHAR(64) PRIMARY KEY, player_id VARCHAR(64) NOT NULL, title VARCHAR(120) NOT NULL,
+  body TEXT NOT NULL, source_type VARCHAR(32) NOT NULL DEFAULT 'SYSTEM', source_ref VARCHAR(64) NULL,
+  attachments_json JSON NOT NULL, idempotency_key VARCHAR(80) NOT NULL,
+  is_read BOOLEAN NOT NULL DEFAULT FALSE, claimed_at DATETIME(3) NULL, expires_at DATETIME(3) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  UNIQUE KEY uq_player_mail_idempotency (player_id, idempotency_key),
+  KEY ix_player_mail_feed (player_id, created_at, id),
+  KEY ix_player_mail_unclaimed (player_id, claimed_at, expires_at),
+  CONSTRAINT fk_player_mail_player FOREIGN KEY (player_id) REFERENCES players(id)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS player_checkin_states (
+  player_id VARCHAR(64) PRIMARY KEY, cycle_no INT UNSIGNED NOT NULL DEFAULT 1,
+  streak_day TINYINT UNSIGNED NOT NULL DEFAULT 0, last_claim_date_vn CHAR(10) NULL,
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  version BIGINT NOT NULL DEFAULT 1,
+  CONSTRAINT fk_player_checkin_player FOREIGN KEY (player_id) REFERENCES players(id)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS player_alchemy_logs (
+  id VARCHAR(64) PRIMARY KEY, player_id VARCHAR(64) NOT NULL, recipe_code VARCHAR(64) NOT NULL,
+  base_item_code VARCHAR(64) NOT NULL, output_item_code VARCHAR(64) NULL,
+  outcome ENUM('SUCCESS', 'MUTATED', 'FAILED') NOT NULL,
+  craft_success_rate DECIMAL(5,4) NOT NULL, mutation_rate DECIMAL(5,4) NOT NULL DEFAULT 0.0500,
+  cost_xu BIGINT NOT NULL DEFAULT 0, cost_linh_thach BIGINT NOT NULL DEFAULT 0,
+  consumed_items_json JSON NOT NULL, idempotency_key VARCHAR(80) NOT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  UNIQUE KEY uq_alchemy_idempotency (player_id, idempotency_key),
+  KEY ix_alchemy_player_time (player_id, created_at, id),
+  CONSTRAINT fk_player_alchemy_player FOREIGN KEY (player_id) REFERENCES players(id)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS item_instances (
+  id CHAR(36) PRIMARY KEY, owner_player_id VARCHAR(64) NOT NULL, item_code VARCHAR(64) NOT NULL,
+  location ENUM('INVENTORY', 'EQUIPPED', 'MARKET_ESCROW', 'DESTROYED') NOT NULL DEFAULT 'INVENTORY',
+  inventory_slot INT NULL, equipped_slot VARCHAR(24) NULL,
+  equipped_key VARCHAR(24) GENERATED ALWAYS AS (IF(location = 'EQUIPPED', equipped_slot, NULL)) STORED,
+  rarity ENUM('NORMAL', 'MAGIC', 'EXL', 'ANCIENT') NOT NULL DEFAULT 'NORMAL',
+  enhance_level TINYINT UNSIGNED NOT NULL DEFAULT 0, has_luck BOOLEAN NOT NULL DEFAULT FALSE,
+  exl_options_json JSON NOT NULL, version BIGINT NOT NULL DEFAULT 1,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  KEY ix_inst_owner_loc (owner_player_id, location, inventory_slot, id),
+  UNIQUE KEY uq_inst_owner_equipped (owner_player_id, equipped_key),
+  CONSTRAINT fk_inst_player FOREIGN KEY (owner_player_id) REFERENCES players(id)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS player_enhance_logs (
+  id VARCHAR(64) PRIMARY KEY, player_id VARCHAR(64) NOT NULL, instance_id CHAR(36) NOT NULL,
+  item_code VARCHAR(64) NOT NULL, from_level TINYINT UNSIGNED NOT NULL, to_level TINYINT UNSIGNED NOT NULL,
+  outcome ENUM('SUCCESS', 'FAIL_DOWN', 'FAIL_RESET_ZERO', 'FAIL_PROTECTED') NOT NULL,
+  used_protection BOOLEAN NOT NULL DEFAULT FALSE, has_luck BOOLEAN NOT NULL DEFAULT FALSE,
+  success_rate DECIMAL(5,4) NOT NULL, cost_xu BIGINT NOT NULL DEFAULT 0, cost_linh_thach BIGINT NOT NULL DEFAULT 0,
+  consumed_items_json JSON NOT NULL, idempotency_key VARCHAR(80) NOT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  UNIQUE KEY uq_enhance_idempotency (player_id, idempotency_key),
+  KEY ix_enhance_player_time (player_id, created_at, id),
+  CONSTRAINT fk_enhance_player FOREIGN KEY (player_id) REFERENCES players(id)
 ) ENGINE=InnoDB;

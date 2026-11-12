@@ -43,9 +43,11 @@ Separate data by lifecycle:
 |---|---|---|---|
 | User account | `users` (Current) | PK `id`; unique normalized `username` | `password_hash`, `role`, `status`, timestamps. One account owns one player in the current contract. |
 | Refresh session | `auth_refresh_tokens` (Current) | PK `id`; unique `token_hash` | `user_id` FK → users, expiry, revoked time, replacement hash, created time. Store only token hashes. |
-| Player | `players` (Current) | PK `id`; unique `user_id` FK → users; current schema also makes `name` globally unique | `name`, `gender`, `linh_can`, `realm_code`, `realm_stage`, `tu_vi`, `tu_vi_linh_can`, `hp/mp`, stats, unspent points, `map_code`, fractional `x/y`, `version`. `xu` belongs to Wallet. |
-| Wallet | `wallets` (Current) | PK/FK `player_id` → players | Balances and version. Current balances are `xu` and `linh_thach`; API `player.xu` is a projection. |
-| Currency transaction | `currency_ledger` (Current) | PK `id`; unique idempotency key per player | Player, reason, signed amount, resulting balance, timestamp. Target adds `currency_code` and a reference to the use case so multiple wallet currencies remain distinguishable. Append-only. |
+| Player | `players` (Current) | PK `id`; unique `user_id` FK → users; current schema also makes `name` globally unique | `name`, `gender`, `linh_can`, `realm_code`, `realm_stage`, `tu_vi`, `tu_vi_linh_can`, `hp/mp`, stats, unspent points, `inventory_capacity` (`40..80`, default `40`), `map_code`, fractional `x/y`, `version`. `xu` and `linh_thach` belong to Wallet. |
+| Wallet | `wallets` (Current) | PK/FK `player_id` → players | Balances and version. Current balances are `xu` and `linh_thach`; API `player.xu` and `player.linhThach` are projections. |
+| Currency transaction | `currency_ledger` (Current) | PK `id`; unique idempotency key per player; index `ix_ledger_player_currency_time` | Player, `currency_type` (`XU` \| `LINH_THACH`), reason, signed amount, resulting balance, `reference_type`, `reference_id`, timestamp. Append-only. |
+| Player mail | `player_mail` (Current) | PK `id`; unique `(player_id, idempotency_key)` | Inbox mail per player, `source_type` (`SYSTEM`/`ADMIN`/`EVENT`/`COMPENSATION`/`TOPUP_BONUS`), `attachments_json`, `is_read`, `claimed_at`, `expires_at`. |
+| Daily check-in state | `player_checkin_states` (Current) | PK/FK `player_id` → players | Rolling 7-day cycle (`cycle_no`, `streak_day`), `last_claim_date_vn` (UTC+7 `YYYY-MM-DD`), `version`. |
 | Item definition | `item_definitions` (Target) | PK `item_code` | Type, stack limit, prices, required realm, effects/stats, active/version. Stable searchable fields are columns; optional presentation/effect detail may be JSON. Current item seed/override data has no relational master row. |
 | Inventory stack | `inventory_items` (Current) | PK `id`; unique `(player_id,item_code)` | Player FK, item definition FK, quantity, slot, version. This models stackable catalog items; it does not model per-instance random rolls. |
 | Equipment slot | `player_equipment` (Current) | Composite PK `(player_id,slot)`; unique `(player_id,item_code)` | Player FK, item definition FK, version. Equipped item is removed from its inventory stack in the same transaction. |
@@ -115,6 +117,8 @@ erDiagram
 | Learn/equip skill | player lock, learned rows, loadout rows, action ledger, idempotency result | Equipped set is a subset of learned set and obeys slot/category/root rules |
 | Accept/track/claim quest | player lock, player quest rows/meta, wallet, inventory, ledgers, idempotency result | Progress/status/reward/meta remain consistent; reward cannot be granted twice |
 | Admin publish | map/content version and audit row | Only validated versions become published; prior versions remain recoverable |
+| Send/claim player mail | admin audit + `player_mail` lock, wallet, `currency_ledger` (`XU`/`LINH_THACH`), inventory, player `tu_vi` | Delivery deduplicated by `(player_id, idempotency_key)`; rewards claimed at most once before `expires_at` |
+| Daily check-in | `player_checkin_states`, wallet, `currency_ledger`, inventory, player `tu_vi` | Check-in uses UTC+7 DB clock and advances the 7-day cycle once per VN calendar day |
 
 The Socket.IO event is published after the database commit. If event delivery must survive a process crash, add an outbox in the same transaction; do not hold a DB transaction open while emitting or waiting on a socket.
 
@@ -126,7 +130,7 @@ The current schema already has a sound start for account/player-owned state, but
 2. Inventory has unique `(player_id,item_code)` but no unique `(player_id,slot)` or database check for positive quantity. Enforce both in the DB when supported and keep service validation.
 3. `player_equipped_skills` is not constrained to `player_skills`; the service currently enforces this. Add the composite FK.
 4. `player_quest_meta.tracked_id` can point at no quest row. Add a composite FK or enforce and reconcile it transactionally.
-5. Wallet has two currencies, while `currency_ledger` has no currency column. Add `currency_code` before mutating more than one balance through the ledger.
+5. **Resolved (`20261112_economy_mail_retention.sql`)**: `currency_ledger` now includes `currency_type` (`XU` \| `LINH_THACH`), `reference_type`, `reference_id`, and `ix_ledger_player_currency_time`, so both wallet currencies are audited append-only.
 6. `players.max_hp/max_mp` are persisted while `derivedStats.maxHp/maxMp` are recalculated from stats/equipment. Choose one canonical rule and update current vitals/limits in the same transaction to prevent drift.
 7. `admin_worlds` stores only the latest map document/version; `admin_audit_logs` contains before/after JSON but there is no immutable version entity for reliable publish/rollback.
 8. `admin_content_records` is generic JSON. Admin quest overrides are not consumed by `QuestService`, which uses static `QUEST_DEFINITIONS`; NPCs also exist inside world documents and the generic `npcs` collection. Choose one owner for each definition before adding FKs or claiming edits are live.
@@ -164,7 +168,7 @@ These defaults are grounded in the current FE contract and BE code:
 - `item_code`, `skill_code`, `quest_id`, and `map_code` are stable canonical identifiers. Display names and FE aliases are not keys.
 - Inventory rows represent stackable catalog items keyed by `(player_id,item_code)`. Per-instance randomized item attributes are outside the current model.
 - Player names stay globally unique because the current BE schema enforces it. Legacy import must detect collisions and report them rather than silently rename accounts.
-- `xu` is the only currency currently written to `currency_ledger`; add `currency_code` before recording another wallet currency.
+- `currency_ledger` writes both `XU` and `LINH_THACH` via `currency_type`, `reference_type`, and `reference_id` in the same transaction as wallet mutations.
 - Versioned definitions are the target for admin-editable content. Until their runtime readers and backfill exist, the existing seed-plus-override sources remain the running implementation; an admin write is not proof that a definition affects gameplay.
 - Legacy IDs are mapped by an explicit importer table/report. Never derive a new ID from a numeric legacy ID or trust FE snapshots as migration input.
 

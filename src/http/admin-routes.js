@@ -1,9 +1,16 @@
 const express = require('express');
 const asyncRoute = require('./async-route');
+const { createRateLimiter } = require('./rate-limit');
 
-function createAdminRouter({ auth, adminWorlds, adminContent, skillVfx }) {
+function createAdminRouter({ auth, adminWorlds, adminContent, skillVfx, mail, rateLimitRedis = null }) {
   const router = express.Router();
   const authorize = require('./admin-auth').createAdminAuth({ auth });
+  const adminMailLimiter = createRateLimiter({
+    windowMs: 60_000,
+    max: 30,
+    redis: rateLimitRedis,
+    key: (request) => `admin_mail:${request.auth?.sub || request.ip}`,
+  });
   router.use(authorize);
 
   router.get('/worlds', (_req, res) => res.json(adminWorlds.list()));
@@ -25,6 +32,13 @@ function createAdminRouter({ auth, adminWorlds, adminContent, skillVfx }) {
   router.post('/skill-vfx', asyncRoute(async (req, res) => res.status(201).json(await skillVfx.create(req.body, req.auth.sub, req.requestId || req.get('x-request-id')))));
   router.put('/skill-vfx/:skillCode', asyncRoute(async (req, res) => res.json(await skillVfx.update(req.params.skillCode, req.body, req.auth.sub, req.requestId || req.get('x-request-id')))));
   router.delete('/skill-vfx/:skillCode', asyncRoute(async (req, res) => res.json(await skillVfx.remove(req.params.skillCode, req.auth.sub, req.requestId || req.get('x-request-id')))));
+
+  if (mail) {
+    router.post('/mail/send', adminMailLimiter, asyncRoute(async (req, res) => res.status(201).json({
+      ok: true,
+      ...await mail.sendSystemMail(req.auth.sub, req.body, req.requestId || req.get('x-request-id')),
+    })));
+  }
   return router;
 }
 

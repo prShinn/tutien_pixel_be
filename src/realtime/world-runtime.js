@@ -222,6 +222,7 @@ function createWorldRuntime({ world, catalog = null }) {
         players.set(String(session.userId), {
           userId: String(session.userId),
           buffs: structuredClone(session.buffs || {}),
+          debuffs: structuredClone(session.debuffs || {}),
           cooldowns: [...(session.cooldowns instanceof Map ? session.cooldowns : new Map())],
         });
       }
@@ -254,6 +255,7 @@ function createWorldRuntime({ world, catalog = null }) {
           .map((player) => [String(player.userId), {
             userId: String(player.userId),
             buffs: structuredClone(player.buffs || {}),
+            debuffs: structuredClone(player.debuffs || {}),
             cooldowns: Array.isArray(player.cooldowns) ? structuredClone(player.cooldowns) : [],
           }]));
       }
@@ -264,7 +266,11 @@ function createWorldRuntime({ world, catalog = null }) {
       const player = room?.orphanedPlayers?.get(String(userId));
       if (!player) return null;
       room.orphanedPlayers.delete(String(userId));
-      return { buffs: structuredClone(player.buffs || {}), cooldowns: new Map(player.cooldowns || []) };
+      return {
+        buffs: structuredClone(player.buffs || {}),
+        debuffs: structuredClone(player.debuffs || {}),
+        cooldowns: new Map(player.cooldowns || []),
+      };
     },
     refreshRoom(mapCode) {
       const room = roomFor(mapCode);
@@ -289,6 +295,7 @@ function createWorldRuntime({ world, catalog = null }) {
         persistPromise: Promise.resolve(),
         cooldowns: player.cooldowns instanceof Map ? player.cooldowns : new Map(),
         buffs: player.buffs && typeof player.buffs === 'object' ? player.buffs : {},
+        debuffs: player.debuffs && typeof player.debuffs === 'object' ? player.debuffs : {},
         portalLockId: null,
       };
       room.players.set(socketId, session);
