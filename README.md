@@ -16,15 +16,16 @@ npm start
 
 FE local mặc định kết nối BE ở `http://localhost:3800`. `CORS_ORIGIN` nhận một origin hoặc danh sách cách nhau bằng dấu phẩy. Cấu hình mẫu cho phép các cổng FE local 3000, 3001 và 4200.
 
-BE lắng nghe tại `http://localhost:3800` theo mặc định; có thể đổi bằng biến môi trường `PORT`. Import [schema.sql](schema.sql) vào MySQL mới. Với database đã có, chạy các migration theo thứ tự: [20261104_player_progression.sql](migrations/20261104_player_progression.sql), sau đó [20261107_respawn_position_version.sql](migrations/20261107_respawn_position_version.sql). Node 24 được yêu cầu; script `start`/`dev` đọc `.env` bằng runtime option của Node.
+BE lắng nghe tại `http://localhost:3800` theo mặc định; có thể đổi bằng biến môi trường `PORT`. Import [schema.sql](schema.sql) vào MySQL mới. Với database đã có, chạy các migration theo thứ tự: [20261104_player_progression.sql](migrations/20261104_player_progression.sql), [20261107_respawn_position_version.sql](migrations/20261107_respawn_position_version.sql), sau đó [20261112_economy_mail_retention.sql](migrations/20261112_economy_mail_retention.sql). Node 24 được yêu cầu; script `start`/`dev` đọc `.env` bằng runtime option của Node.
 
 ## API chính
 
 - Auth: register, login, demo (dev only), me.
-- Player: create/load, power, profile name update, respawn after server-authoritative death; stats, shop, inventory, cultivation, skills, equipment.
+- Player: create/load, power, wallet ledger, profile name update, respawn after server-authoritative death; stats, shop (`XU` & `LINH_THACH` Kỳ Trân Các), inventory (`BAG_EXPAND`/`STAT_RESET`/`EXCHANGE_XU`), cultivation, skills, equipment.
+- Mail & Retention: player mailbox + idempotent claim, daily 7-day check-in (UTC+7), offline cultivation (`5..480` min + `AD_BOOST` x1.5).
 - World/catalog: map published và read-only catalog seed.
 - Quest: snapshot, accept, track, claim; reward commit nguyên tử.
-- Admin: map CRUD/validate/publish/portal, content CRUD, skill VFX CRUD; chỉ tài khoản Bearer JWT có role `GM` hoặc `ADMIN`.
+- Admin: map CRUD/validate/publish/portal, content CRUD, skill VFX CRUD, admin mail send; chỉ tài khoản Bearer JWT có role `GM` hoặc `ADMIN`.
 - Socket.IO: authenticated commands `world.join`, `world.resync`, movement, portal, combat, skill, loot, chat.
 
 Chi tiết request, response, auth, error code và boundary ở [API_V1.md](docs/API_V1.md), [SOCKET_V1.md](docs/SOCKET_V1.md), [ERROR_CODES.md](docs/ERROR_CODES.md), [STATE_INVARIANTS.md](docs/STATE_INVARIANTS.md). Mô hình entity, khóa, quan hệ và đường join ở [DATA_MODEL_V1.md](docs/DATA_MODEL_V1.md); phân lớp và hướng chia module ở [ARCHITECTURE.md](docs/ARCHITECTURE.md).

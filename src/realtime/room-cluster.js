@@ -73,6 +73,7 @@ function createRoomCluster({ io, redisUrl, players, world, clientFactory } = {})
       isOwner() { return true; },
       async owns() { return true; },
       markDirty() {},
+      async notifyPlayerSync() {},
       async healthCheck() { return false; },
       async close() {},
     };
@@ -105,6 +106,7 @@ function createRoomCluster({ io, redisUrl, players, world, clientFactory } = {})
   let runtime = null;
   let commandHandler = null;
   let disconnectHandler = null;
+  let playerChangedHandler = null;
   let started = false;
   let closed = false;
   let maintenanceRunning = false;
@@ -121,8 +123,9 @@ function createRoomCluster({ io, redisUrl, players, world, clientFactory } = {})
 
   function bind(gameplay) {
     runtime = gameplay.runtime;
-    commandHandler = gameplay.commandLocal;
-    disconnectHandler = gameplay.disconnectLocal;
+    commandHandler = gameplay.commandLocal || gameplay.command;
+    disconnectHandler = gameplay.disconnectLocal || gameplay.disconnect;
+    playerChangedHandler = gameplay.playerChangedLocal || gameplay.playerChanged || null;
   }
 
   function parseJson(value) {
@@ -212,6 +215,12 @@ function createRoomCluster({ io, redisUrl, players, world, clientFactory } = {})
   async function receiveRequest(raw) {
     let message;
     try { message = JSON.parse(raw); } catch { return; }
+    if (message?.operation === 'player_sync') {
+      if (message.userId) {
+        void Promise.resolve(playerChangedHandler?.(String(message.userId))).catch(() => {});
+      }
+      return;
+    }
     if (!message || message.targetNode !== nodeId || !message.id || !message.responseChannel) return;
     try {
       const owner = await publisher.get(leaseKey(message.mapCode));
@@ -549,6 +558,11 @@ function createRoomCluster({ io, redisUrl, players, world, clientFactory } = {})
     }));
   }
 
+  async function notifyPlayerSync(userId) {
+    if (!started || closed || !userId) return;
+    await publisher.publish(RPC_CHANNEL, JSON.stringify({ operation: 'player_sync', userId: String(userId) }));
+  }
+
   return {
     enabled: true,
     nodeId,
@@ -563,6 +577,7 @@ function createRoomCluster({ io, redisUrl, players, world, clientFactory } = {})
     isOwner(mapCode) { return owned.has(normalizeMapCode(mapCode)); },
     owns,
     markDirty(mapCode) { if (owned.has(normalizeMapCode(mapCode))) dirtyRooms.add(normalizeMapCode(mapCode)); },
+    notifyPlayerSync,
     healthCheck,
     close,
   };

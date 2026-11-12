@@ -1,5 +1,5 @@
 const seed = require('../data/mock-data');
-const { BALANCE, deriveStats, describeEquipment, combatPower } = require('../data/balance');
+const { BALANCE, deriveStats, resolvePassiveModifiers, effectiveMaxVitals, describeEquipment, combatPower } = require('../data/balance');
 
 const clone = (value) => structuredClone(value);
 
@@ -42,13 +42,21 @@ function createCatalogService() {
   let items = clone(seed.items);
   let skills = clone(seed.skills);
   let monsters = clone(seed.monsterDefs || []);
+  let alchemyRecipes = clone(seed.alchemyRecipes || []);
+  for (const recipe of alchemyRecipes) {
+    if (!(Number(recipe.craftSuccessRate) > 0 && Number(recipe.craftSuccessRate) <= BALANCE.alchemy.maxCraftSuccessRate)) {
+      throw new Error(`Invalid craftSuccessRate on recipe ${recipe.code}: must be in (0, ${BALANCE.alchemy.maxCraftSuccessRate}]`);
+    }
+  }
   let monsterRevision = 0;
   const recordVersions = new Map();
   let skillVfxProfiles = {};
   function describeItem(item) {
     if (!item) return null;
     const result = clone(item);
-    if (String(item.type || item.loai).toUpperCase() === 'EQUIPMENT') result.equipmentInfo = describeEquipment(item);
+    result.rarity = String(result.rarity || 'NORMAL').toUpperCase();
+    result.itemLevel = Math.max(1, Math.floor(Number(result.itemLevel || ((Number(result.requiredRealmStt || 1)) * 10))));
+    if (String(item.type || item.loai).toUpperCase() === 'EQUIPMENT') result.equipmentInfo = describeEquipment(result);
     if (item.slot === 'weapon') result.basicAttack = weaponAttack(item);
     return result;
   }
@@ -60,7 +68,11 @@ function createCatalogService() {
     listRoots: () => clone(seed.roots),
     getRootByCode: (code) => clone(seed.roots.find((root) => root.id === code || root.maLinhCan === code) || null),
     listItems: () => items.map(describeItem),
+    listPremiumItems: () => items.filter((item) => String(item.currency || 'XU').toUpperCase() === 'LINH_THACH').map(describeItem),
     getItemByCode: (code) => describeItem(items.find((item) => item.id === code || item.maDo === code) || null),
+    listAlchemyRecipes: () => clone(alchemyRecipes),
+    getAlchemyRecipeByCode: (code) => clone(alchemyRecipes.find((recipe) => recipe.code === code) || null),
+    listPillQualities: () => clone(Object.values(BALANCE.breakthrough.qualities)),
     listSkills: () => clone(skills),
     listMonsters: () => clone(monsters),
     getMonsterRevision: () => monsterRevision,
@@ -95,23 +107,64 @@ function createCatalogService() {
       if (collection === 'monsters') { monsters = clone(records); monsterRevision += 1; }
     },
     decoratePlayer(player) {
-      const inventory = (player.inventory || []).map((entry) => ({
-        ...(items.find((item) => item.id === entry.itemCode) || {}),
-        ...entry,
-        id: entry.itemCode || entry.id,
-      }));
+      const inventory = (player.inventory || []).map((entry) => {
+        const code = entry.itemCode || entry.id;
+        const catalogItem = items.find((item) => item.id === code || item.maDo === code) || {};
+        const rarity = entry.rarity || catalogItem.rarity || 'NORMAL';
+        const enhanceLevel = Math.max(0, Math.floor(Number(entry.enhanceLevel || 0)));
+        const hasLuck = Boolean(entry.hasLuck ?? catalogItem.hasLuck);
+        const exlOptions = Array.isArray(entry.exlOptions) ? entry.exlOptions : [];
+        const merged = {
+          ...catalogItem,
+          ...entry,
+          id: code,
+          itemCode: code,
+          rarity,
+          enhanceLevel,
+          hasLuck,
+          exlOptions,
+        };
+        if (String(merged.type || merged.loai || '').toUpperCase() === 'EQUIPMENT') {
+          merged.equipmentInfo = describeEquipment(merged);
+        }
+        return merged;
+      });
       const slots = ['weapon', 'armor', 'pants', 'boots', 'hat', 'gloves', 'ring', 'amulet', 'belt', 'gem'];
       const equipment = Object.fromEntries(slots.map((slot) => {
         const stored = player.equipment?.[slot];
         const code = typeof stored === 'string' ? stored : stored?.itemCode || stored?.id;
-        const item = items.find((entry) => entry.id === code);
-        const details = item && slot === 'weapon' ? { ...item, basicAttack: weaponAttack(item) } : item;
-        return [slot, code ? { ...details, id: code, itemCode: code } : null];
+        const item = code ? items.find((entry) => entry.id === code || entry.maDo === code) : null;
+        if (!code) return [slot, null];
+        const instanceMeta = typeof stored === 'object' && stored ? stored : {};
+        const isInstance = Boolean(instanceMeta.isInstance ?? instanceMeta.instanceId);
+        const rarity = instanceMeta.rarity || item?.rarity || 'NORMAL';
+        const enhanceLevel = Math.max(0, Math.floor(Number(instanceMeta.enhanceLevel || 0)));
+        const hasLuck = Boolean(instanceMeta.hasLuck ?? item?.hasLuck);
+        const exlOptions = Array.isArray(instanceMeta.exlOptions) ? instanceMeta.exlOptions : [];
+        const merged = {
+          ...(item || {}),
+          ...instanceMeta,
+          id: code,
+          itemCode: code,
+          ...(isInstance && instanceMeta.instanceId ? { instanceId: instanceMeta.instanceId } : {}),
+          isInstance,
+          rarity,
+          enhanceLevel,
+          hasLuck,
+          exlOptions,
+        };
+        if (item && slot === 'weapon') merged.basicAttack = weaponAttack(item);
+        if (item) merged.equipmentInfo = describeEquipment(merged);
+        return [slot, merged];
       }));
       const learnedSkills = player.learnedSkills || [];
       const equippedSkills = player.equippedSkills || [];
       const equippedSkillDefinitions = equippedSkills.map((code) => skills.find((skill) => skill.code === code)).filter(Boolean);
       const derivedStats = deriveStats(player.stats || {}, equipment);
+      const passive = resolvePassiveModifiers(skills, learnedSkills, player.linhCan);
+      const effectiveVitals = effectiveMaxVitals(player, derivedStats, passive);
+      const hasVitalsContext = player.maxHp != null || player.maxMp != null || player.stats != null
+        || Object.values(equipment).some(Boolean) || learnedSkills.length > 0;
       const combat = combatPower({
         ...player,
         realm: player.canhGioi?.stt || 1,
@@ -144,6 +197,12 @@ function createCatalogService() {
         equippedSkills,
         skills: equippedSkillDefinitions,
         derivedStats,
+        ...(hasVitalsContext ? {
+          maxHp: effectiveVitals.maxHp,
+          maxMp: effectiveVitals.maxMp,
+          ...(player.hp != null ? { hp: Math.min(Math.max(0, Number(player.hp)), effectiveVitals.maxHp) } : {}),
+          ...(player.mp != null ? { mp: Math.min(Math.max(0, Number(player.mp)), effectiveVitals.maxMp) } : {}),
+        } : {}),
         combatPower: combat,
         tuViLinhCan: Number(player.tuViLinhCan || 0),
         unspentStatPoints: Number(player.unspentStatPoints ?? player.stats?.unspentPoints ?? 0),

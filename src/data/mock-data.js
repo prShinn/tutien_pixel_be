@@ -147,7 +147,11 @@ function makeTerrain(kind) {
         clearCircle(ground, objects, elevation, x, y, radius, 0);
       }
     }
-    if (kind === "thanh_van_son_coc") clearCircle(ground, objects, elevation, 590, 200, 48, 0);
+    if (kind === "thanh_van_son_coc") {
+      for (const [x, y, radius] of [[590, 200, 48], [300, 375, 24], [300, 388, 14], [12, 200, 12], [36, 200, 12]]) {
+        clearCircle(ground, objects, elevation, x, y, radius, 0);
+      }
+    }
     if (mountain) {
       for (const [x, y, radius] of [[36, 200, 28], [300, 130, 22], [400, 300, 24], [500, 200, 28]]) {
         clearCircle(ground, objects, elevation, x, y, radius, 0);
@@ -235,7 +239,7 @@ const roots = [
   ["LOI", "Lôi", "⚡", "#ffff88", "#3a3a1a"],
 ].map(([id, name, emoji, color, bg]) => ({ id, name, emoji, color, bg, ...rootDesign[id] }));
 
-const breakthroughPills = [
+const breakthroughPillLines = [
   ["DAN_PHI_THANG", "Phi Thăng Đan", "KHI_DONG", "Luyện Thể", "Khí Động"],
   ["DAN_KHI_NGUNG", "Khí Ngưng Đan", "LY_HOP", "Khí Động", "Ly Hợp"],
   ["DAN_LY_HOP", "Ly Hợp Đan", "CHAN_NGUYEN", "Ly Hợp", "Chân Nguyên"],
@@ -248,32 +252,65 @@ const breakthroughPills = [
   ["DAN_DAI_DAO", "Đại Đạo Nguyên Đan", "DAO_NGUYEN", "Hư Vương", "Đạo Nguyên"],
   ["DAN_DE_NGUYEN", "Đế Nguyên Đan", "DE_TON", "Đạo Nguyên", "Đế Tôn"],
   ["DAN_DAI_DE", "Đại Đế Hóa Thân", "DAI_DE", "Đế Tôn", "Đại Đế"],
-].map(([id, name, realmCode, fromRealm, toRealm]) => ({
-  id,
-  maDo: id,
-  tenDo: name,
-  name,
-  icon: "🔴",
-  loai: "BREAKTHROUGH_PILL",
-  type: "BREAKTHROUGH_PILL",
-  realmCode,
-  giaMua: 0,
-  giaBan: 0,
-  moTa: `Đan dược đặc thù để đột phá từ ${fromRealm} lên ${toRealm}.`,
-}));
+];
+
+const pillQualityTiers = [
+  { key: "HA_PHAM", suffix: "", tier: 1, label: "Hạ phẩm", icon: "🟢", breakthroughRate: 0.7 },
+  { key: "TRUNG_PHAM", suffix: "_TRUNG", tier: 2, label: "Trung phẩm", icon: "🔵", breakthroughRate: 0.8 },
+  { key: "THUONG_PHAM", suffix: "_THUONG", tier: 3, label: "Thượng phẩm", icon: "🟣", breakthroughRate: 0.9 },
+  { key: "CUC_PHAM", suffix: "_CUC", tier: 4, label: "Cực phẩm", icon: "🌟", breakthroughRate: 1.0 },
+];
+
+const breakthroughPills = breakthroughPillLines.flatMap(([baseId, baseName, realmCode, fromRealm, toRealm], lineIndex) =>
+  pillQualityTiers.map((tierCfg, qIdx) => {
+    const id = `${baseId}${tierCfg.suffix}`;
+    const nextTier = pillQualityTiers[qIdx + 1] || null;
+    const nextQualityItemCode = nextTier ? `${baseId}${nextTier.suffix}` : null;
+    const ratePct = Math.round(tierCfg.breakthroughRate * 100);
+    return {
+      id,
+      maDo: id,
+      tenDo: `${baseName} (${tierCfg.label})`,
+      name: `${baseName} (${tierCfg.label})`,
+      icon: tierCfg.icon,
+      loai: "BREAKTHROUGH_PILL",
+      type: "BREAKTHROUGH_PILL",
+      realmCode,
+      requiredRealmStt: lineIndex + 1,
+      pillGroup: baseId,
+      quality: tierCfg.key,
+      qualityTier: tierCfg.tier,
+      qualityLabel: tierCfg.label,
+      rarity: 'NORMAL',
+      breakthroughRate: tierCfg.breakthroughRate,
+      nextQualityItemCode,
+      giaMua: 0,
+      giaBan: (lineIndex + 1) * 15 * tierCfg.tier,
+      moTa: `Đan dược phá đại cảnh giới từ ${fromRealm} lên ${toRealm} · Phẩm chất ${tierCfg.label} (${ratePct}% thành công).`,
+    };
+  }),
+);
 
 const items = [
-  { id: "STONE_LINH_NHO", maDo: "STONE_LINH_NHO", tenDo: "Linh Thạch Nhỏ", name: "Linh Thạch Nhỏ", icon: "💎", loai: "STONE", type: "STONE", giaTriTuVi: 120, giaMua: 20, giaBan: 10, moTa: "Một viên linh thạch chứa linh khí non trẻ." },
-  { id: "HUYET_NGOC_NHO", maDo: "HUYET_NGOC_NHO", tenDo: "Huyết Ngọc Nhỏ", name: "Huyết Ngọc Nhỏ", icon: "🧪", loai: "POTION", type: "POTION", healHp: 60, giaMua: 30, giaBan: 15, moTa: "Hồi phục một lượng HP." },
-  { id: "POTION_TIEU_HOAN", maDo: "POTION_TIEU_HOAN", tenDo: "Tiểu Hoàn Đan", name: "Tiểu Hoàn Đan", icon: "💊", loai: "POTION", type: "POTION", healHp: 120, giaMua: 25, giaBan: 12, moTa: "Đan dược sơ cấp hồi phục nhanh 120 điểm Khí Huyết (HP)." },
-  { id: "POTION_TU_KHI", maDo: "POTION_TU_KHI", tenDo: "Tụ Khí Đan", name: "Tụ Khí Đan", icon: "🧪", loai: "POTION", type: "POTION", healMp: 70, giaMua: 30, giaBan: 15, moTa: "Đan dược ngưng tụ linh khí, hồi phục 70 điểm Pháp Lực (MP)." },
-  { id: "POTION_TAY_TUY", maDo: "POTION_TAY_TUY", tenDo: "Tẩy Tủy Đan", name: "Tẩy Tủy Đan", icon: "🌟", loai: "CONSUME", type: "CONSUME", statBoost: 1, giaMua: 350, giaBan: 175, moTa: "Thần dược hoán cốt tẩy tủy, tăng ngẫu nhiên 1 điểm Tiềm Năng vĩnh viễn." },
-  { id: "LINH_CAN_NGOC_TUY", maDo: "LINH_CAN_NGOC_TUY", tenDo: "Linh Căn Ngọc Tủy", name: "Linh Căn Ngọc Tủy", icon: "🔷", loai: "LINDAN", type: "LINDAN", tuViLinhCanVal: 80, giaMua: 180, giaBan: 90, moTa: "Thiên tài địa bảo tăng nhẹ tu vi linh căn." },
-  { id: "THIEN_TAI_DIA_BAO", maDo: "THIEN_TAI_DIA_BAO", tenDo: "Thiên Tài Địa Bảo", name: "Thiên Tài Địa Bảo", icon: "💠", loai: "LINDAN", type: "LINDAN", tuViLinhCanVal: 220, giaMua: 520, giaBan: 260, moTa: "Tài nguyên hiếm, tăng tu vi linh căn có giới hạn." },
-  { id: "MAT_LANG_NANH", maDo: "MAT_LANG_NANH", tenDo: "Nanh Hoang Sói", name: "Nanh Hoang Sói", icon: "🦴", loai: "MATERIAL", type: "MATERIAL", giaMua: 16, giaBan: 8, moTa: "Nanh vuốt sắc nhọn thu được từ Hoang Sói." },
-  { id: "MAT_QUANG_SAT", maDo: "MAT_QUANG_SAT", tenDo: "Quặng Sắt Thô", name: "Quặng Sắt Thô", icon: "⛏️", loai: "MATERIAL", type: "MATERIAL", giaMua: 15, giaBan: 8, moTa: "Quặng sắt sơ cấp khai thác từ vách đá, dùng cho thợ rèn." },
-  { id: "MAT_THAO_DUOC", maDo: "MAT_THAO_DUOC", tenDo: "Bạch Linh Thảo", name: "Bạch Linh Thảo", icon: "🌿", loai: "MATERIAL", type: "MATERIAL", giaMua: 12, giaBan: 6, moTa: "Thảo dược mọc ven sông rãnh, nguyên liệu luyện đan dược." },
-  { id: "MAT_DA_THU", maDo: "MAT_DA_THU", tenDo: "Da Thú Dày", name: "Da Thú Dày", icon: "📜", loai: "MATERIAL", type: "MATERIAL", giaMua: 18, giaBan: 9, moTa: "Tấm da dày của heo rừng và hoang dã thú, dùng may trang bị." },
+  { id: "STONE_LINH_NHO", maDo: "STONE_LINH_NHO", tenDo: "Linh Thạch Nhỏ", name: "Linh Thạch Nhỏ", icon: "💎", loai: "STONE", type: "STONE", shopCategory: "ALCHEMY", giaTriTuVi: 120, giaMua: 20, giaBan: 10, moTa: "Một viên linh thạch chứa linh khí non trẻ. Dùng hấp thụ Tu Vi hoặc làm dẫn linh luyện đan." },
+  { id: "HUYET_NGOC_NHO", maDo: "HUYET_NGOC_NHO", tenDo: "Huyết Ngọc Nhỏ", name: "Huyết Ngọc Nhỏ", icon: "🧪", loai: "POTION", type: "POTION", shopCategory: "ALCHEMY", healHp: 60, giaMua: 30, giaBan: 15, moTa: "Hồi phục một lượng HP." },
+  { id: "POTION_TIEU_HOAN", maDo: "POTION_TIEU_HOAN", tenDo: "Tiểu Hoàn Đan", name: "Tiểu Hoàn Đan", icon: "💊", loai: "POTION", type: "POTION", shopCategory: "ALCHEMY", quality: "HA_PHAM", qualityLabel: "Hạ phẩm", healHp: 120, giaMua: 25, giaBan: 12, moTa: "Đan dược sơ cấp hồi phục nhanh 120 điểm Khí Huyết (HP)." },
+  { id: "POTION_LINH_HOAN_TRUNG", maDo: "POTION_LINH_HOAN_TRUNG", tenDo: "Trung Hoàn Đan", name: "Trung Hoàn Đan", icon: "💠", loai: "POTION", type: "POTION", shopCategory: "ALCHEMY", quality: "TRUNG_PHAM", qualityLabel: "Trung phẩm", healHp: 240, healMp: 80, giaMua: 0, giaBan: 45, moTa: "Linh đan trung phẩm luyện thành, tức khắc hồi 240 HP và 80 MP." },
+  { id: "POTION_TU_KHI", maDo: "POTION_TU_KHI", tenDo: "Tụ Khí Đan", name: "Tụ Khí Đan", icon: "🧪", loai: "POTION", type: "POTION", shopCategory: "ALCHEMY", quality: "HA_PHAM", qualityLabel: "Hạ phẩm", healMp: 70, giaMua: 30, giaBan: 15, moTa: "Đan dược ngưng tụ linh khí, hồi phục 70 điểm Pháp Lực (MP)." },
+  { id: "POTION_NGUNG_KHI_TRUNG", maDo: "POTION_NGUNG_KHI_TRUNG", tenDo: "Ngưng Khí Đan", name: "Ngưng Khí Đan", icon: "🫧", loai: "POTION", type: "POTION", shopCategory: "ALCHEMY", quality: "TRUNG_PHAM", qualityLabel: "Trung phẩm", healMp: 160, giaMua: 0, giaBan: 40, moTa: "Đan dược ngưng khí tinh thuần, hồi phục 160 điểm Pháp Lực (MP)." },
+  { id: "ELIXIR_TU_VI_HA", maDo: "ELIXIR_TU_VI_HA", tenDo: "Tụ Linh Đan (Hạ phẩm)", name: "Tụ Linh Đan (Hạ phẩm)", icon: "🔮", loai: "STONE", type: "STONE", shopCategory: "ALCHEMY", quality: "HA_PHAM", qualityLabel: "Hạ phẩm", giaTriTuVi: 280, giaMua: 0, giaBan: 40, moTa: "Đan dược ngưng tụ thiên địa linh khí, hấp thụ tăng ngay 280 Tu Vi." },
+  { id: "ELIXIR_TU_VI_TRUNG", maDo: "ELIXIR_TU_VI_TRUNG", tenDo: "Tụ Linh Đan (Trung phẩm)", name: "Tụ Linh Đan (Trung phẩm)", icon: "🧿", loai: "STONE", type: "STONE", shopCategory: "ALCHEMY", quality: "TRUNG_PHAM", qualityLabel: "Trung phẩm", giaTriTuVi: 580, giaMua: 0, giaBan: 85, moTa: "Đan dược thượng hạng do lò luyện đột biến tạo thành, hấp thụ tăng 580 Tu Vi." },
+  { id: "POTION_TAY_TUY", maDo: "POTION_TAY_TUY", tenDo: "Tẩy Tủy Đan", name: "Tẩy Tủy Đan", icon: "🌟", loai: "CONSUME", type: "CONSUME", shopCategory: "ALCHEMY", statBoost: 1, giaMua: 350, giaBan: 175, moTa: "Thần dược hoán cốt tẩy tủy, tăng ngẫu nhiên 1 điểm Tiềm Năng vĩnh viễn." },
+  { id: "LINH_CAN_NGOC_TUY", maDo: "LINH_CAN_NGOC_TUY", tenDo: "Linh Căn Ngọc Tủy", name: "Linh Căn Ngọc Tủy", icon: "🔷", loai: "LINDAN", type: "LINDAN", shopCategory: "ALCHEMY", tuViLinhCanVal: 80, giaMua: 180, giaBan: 90, moTa: "Thiên tài địa bảo tăng nhẹ tu vi linh căn." },
+  { id: "THIEN_TAI_DIA_BAO", maDo: "THIEN_TAI_DIA_BAO", tenDo: "Thiên Tài Địa Bảo", name: "Thiên Tài Địa Bảo", icon: "💠", loai: "LINDAN", type: "LINDAN", shopCategory: "ALCHEMY", tuViLinhCanVal: 220, giaMua: 520, giaBan: 260, moTa: "Tài nguyên hiếm, tăng tu vi linh căn có giới hạn." },
+  { id: "MAT_LANG_NANH", maDo: "MAT_LANG_NANH", tenDo: "Nanh Hoang Sói", name: "Nanh Hoang Sói", icon: "🦴", loai: "MATERIAL", type: "MATERIAL", shopCategory: "ALCHEMY", giaMua: 24, giaBan: 8, moTa: "Nanh vuốt sắc nhọn thu được từ Hoang Sói, dùng trong luyện đan và rèn." },
+  { id: "MAT_QUANG_SAT", maDo: "MAT_QUANG_SAT", tenDo: "Quặng Sắt Thô", name: "Quặng Sắt Thô", icon: "⛏️", loai: "MATERIAL", type: "MATERIAL", shopCategory: "EQUIPMENT", giaMua: 15, giaBan: 8, moTa: "Quặng sắt sơ cấp khai thác từ vách đá, dùng cho thợ rèn." },
+  { id: "MAT_THAO_DUOC", maDo: "MAT_THAO_DUOC", tenDo: "Bạch Linh Thảo", name: "Bạch Linh Thảo", icon: "🌿", loai: "MATERIAL", type: "MATERIAL", shopCategory: "ALCHEMY", giaMua: 18, giaBan: 6, moTa: "Thảo dược mọc ven sông rãnh, nguyên liệu nền tảng luyện đan dược." },
+  { id: "MAT_DA_THU", maDo: "MAT_DA_THU", tenDo: "Da Thú Dày", name: "Da Thú Dày", icon: "📜", loai: "MATERIAL", type: "MATERIAL", shopCategory: "EQUIPMENT", giaMua: 18, giaBan: 9, moTa: "Tấm da dày của heo rừng và hoang dã thú, dùng may trang bị." },
+  { id: "MAT_LINH_CHI", maDo: "MAT_LINH_CHI", tenDo: "Thanh Linh Chi", name: "Thanh Linh Chi", icon: "🍄", loai: "MATERIAL", type: "MATERIAL", shopCategory: "ALCHEMY", quality: "TRUNG_PHAM", qualityLabel: "Trung phẩm", giaMua: 45, giaBan: 22, moTa: "Nấm linh chi thấm địa linh khí, dược dẫn không thể thiếu cho đan trung cấp trở lên." },
+  { id: "MAT_YEU_DAN_SO", maDo: "MAT_YEU_DAN_SO", tenDo: "Yêu Đan Sơ Cấp", name: "Yêu Đan Sơ Cấp", icon: "🟠", loai: "MATERIAL", type: "MATERIAL", shopCategory: "ALCHEMY", quality: "TRUNG_PHAM", qualityLabel: "Trung phẩm", giaMua: 65, giaBan: 32, moTa: "Nội đan ngưng tụ từ yêu thú đồng hoang và sơn cốc, giàu linh lực luyện đan." },
+  { id: "MAT_HOA_TINH", maDo: "MAT_HOA_TINH", tenDo: "Xích Hỏa Tinh", name: "Xích Hỏa Tinh", icon: "🔥", loai: "MATERIAL", type: "MATERIAL", shopCategory: "ALCHEMY", quality: "THUONG_PHAM", qualityLabel: "Thượng phẩm", giaMua: 0, giaBan: 60, moTa: "Tinh thạch thuần hỏa rơi từ Xích Luyện Hổ và Boss Sơn Cốc, dùng trợ hỏa luyện đan cao phẩm." },
+  { id: "MAT_HUYET_NGUYET_TINH", maDo: "MAT_HUYET_NGUYET_TINH", tenDo: "Huyết Nguyệt Tinh Phách", name: "Huyết Nguyệt Tinh Phách", icon: "🩸", loai: "MATERIAL", type: "MATERIAL", shopCategory: "ALCHEMY", quality: "CUC_PHAM", qualityLabel: "Cực phẩm", giaMua: 0, giaBan: 140, moTa: "Tinh phách quý hiếm rơi từ Huyết Nguyệt Lang & Trấn Quan Tân Thủ, tinh hoa luyện Đan Cực Phẩm." },
   { id: "WEAPON_CUNG_GO", maDo: "WEAPON_CUNG_GO", name: "Cung Gỗ Tân Thủ", tenDo: "Cung Gỗ Tân Thủ", icon: "🏹", img: "./assets/items/equipment/weapon_cung_go.svg", type: "EQUIPMENT", loai: "EQUIPMENT", slot: "weapon", weaponKind: "bow", requiredRealmStt: 1, giaMua: 45, giaBan: 22, stats: { pAtk: 3 }, moTa: "Cung gỗ dùng để bắn đòn thường từ xa." },
   { id: "WEAPON_BUA_DONG", maDo: "WEAPON_BUA_DONG", name: "Búa Đồng Rèn", tenDo: "Búa Đồng Rèn", icon: "🔨", img: "./assets/items/equipment/weapon_bua_dong.svg", type: "EQUIPMENT", loai: "EQUIPMENT", slot: "weapon", weaponKind: "hammer", requiredRealmStt: 1, giaMua: 110, giaBan: 55, stats: { pAtk: 14, str: 1 }, moTa: "Búa chiến nặng, đánh chậm nhưng có lực công phá cao." },
   { id: "WEAPON_CHUY_SAT", maDo: "WEAPON_CHUY_SAT", name: "Chùy Gai Thiết Cốt", tenDo: "Chùy Gai Thiết Cốt", icon: "✥", img: "./assets/items/equipment/weapon_chuy_sat.svg", type: "EQUIPMENT", loai: "EQUIPMENT", slot: "weapon", weaponKind: "mace", requiredRealmStt: 1, giaMua: 95, giaBan: 47, stats: { pAtk: 13, pDef: 2 }, moTa: "Chùy gai nặng, mỗi cú đánh dồn lực phá giáp." },
@@ -389,6 +426,19 @@ const items = [
   { id: "COM_BELT_LINH_CUONG_DAI", maDo: "COM_LINH_CUONG_DAI", tenDo: "Đai Linh Cương", name: "Đai Linh Cương", icon: "🔗", img: "./assets/items/equipment/com_linh_cuong_dai.png", loai: "EQUIPMENT", type: "EQUIPMENT", slot: "belt", requiredRealmStt: 2, giaMua: 185, giaBan: 92, stats: { pDef: 8, maxHp: 40, maxMp: 20 }, moTa: "Đai linh cương bền chắc cân bằng sinh lực và pháp lực, ai cũng có thể đeo." },
   { id: "COM_PANTS_LINH_VAN_QUAN", maDo: "COM_LINH_VAN_QUAN", tenDo: "Quần Linh Vân", name: "Quần Linh Vân", icon: "🩳", img: "./assets/items/equipment/com_linh_van_quan.png", loai: "EQUIPMENT", type: "EQUIPMENT", slot: "pants", requiredRealmStt: 1, giaMua: 95, giaBan: 47, stats: { pDef: 6, maxHp: 28, spd: 3 }, moTa: "Quần linh vân nhẹ nhàng vừa bảo vệ vừa tăng khả năng di chuyển cho bất kỳ tu sĩ nào." },
   { id: "COM_BOOTS_VAN_HANH_HAI", maDo: "COM_VAN_HANH_HAI", tenDo: "Hài Vạn Hành Linh", name: "Hài Vạn Hành Linh", icon: "👟", img: "./assets/items/equipment/com_van_hanh_hai.png", loai: "EQUIPMENT", type: "EQUIPMENT", slot: "boots", requiredRealmStt: 1, giaMua: 100, giaBan: 50, stats: { spd: 7, pDef: 3, agi: 1 }, moTa: "Hài vạn hành linh thích hợp mọi địa hình, tu sĩ nào mang cũng tăng tốc độ hành quân." },
+
+  // ── KỲ TRÂN CÁC (Mua bằng LINH_THACH — không trộn vào shop Xu NPC) ─────────
+  { id: "TUI_CAN_KHON_10", maDo: "TUI_CAN_KHON_10", tenDo: "Túi Càn Khôn (+10 ô)", name: "Túi Càn Khôn (+10 ô)", icon: "🎒", loai: "BAG_EXPAND", type: "BAG_EXPAND", bagSlots: 10, currency: "LINH_THACH", shopTab: "PREMIUM", giaMua: 40, giaBan: 0, moTa: "Pháp bảo không gian, dùng để mở rộng thêm 10 ô hành trang (tối đa 80 ô)." },
+  { id: "PHU_TAY_TUY", maDo: "PHU_TAY_TUY", tenDo: "Hoán Cốt Tẩy Điểm Đan", name: "Hoán Cốt Tẩy Điểm Đan", icon: "📜", loai: "STAT_RESET", type: "STAT_RESET", currency: "LINH_THACH", shopTab: "PREMIUM", giaMua: 30, giaBan: 0, moTa: "Tẩy sạch toàn bộ điểm tiềm năng đã cộng vượt mức gốc để phân bổ lại." },
+  { id: "THUONG_PHAM_LINH_TINH", maDo: "THUONG_PHAM_LINH_TINH", tenDo: "Thượng Phẩm Linh Tinh", name: "Thượng Phẩm Linh Tinh", icon: "💠", loai: "STONE", type: "STONE", giaTriTuVi: 800, currency: "LINH_THACH", shopTab: "PREMIUM", giaMua: 15, giaBan: 0, moTa: "Tinh thạch ngưng tụ linh khí thuần khiết, hấp thụ nhận ngay 800 Tu Vi." },
+  { id: "POTION_DAI_HOAN", maDo: "POTION_DAI_HOAN", tenDo: "Đại Hoàn Đan", name: "Đại Hoàn Đan", icon: "⚗️", loai: "POTION", type: "POTION", healHp: 300, healMp: 150, currency: "LINH_THACH", shopTab: "PREMIUM", giaMua: 8, giaBan: 0, moTa: "Linh đan thượng hạng, tức khắc hồi phục 300 HP và 150 MP." },
+  { id: "NGAN_PHIEU_XU_250", maDo: "NGAN_PHIEU_XU_250", tenDo: "Ngân Phiếu 250 Xu", name: "Ngân Phiếu 250 Xu", icon: "🪙", loai: "EXCHANGE_XU", type: "EXCHANGE_XU", xuAmount: 250, currency: "LINH_THACH", shopTab: "PREMIUM", giaMua: 5, giaBan: 0, moTa: "Ngân phiếu Thanh Vân Thương Hội, sử dụng nhận ngay 250 Xu." },
+
+  // ── BỘ NGỌC CƯỜNG HÓA & BÙA BẢO VỆ (KPAH / MU ONLINE) ──────────────────────
+  { id: "GEM_BLESS", maDo: "GEM_BLESS", tenDo: "Ngọc Ước Nguyện", name: "Ngọc Ước Nguyện", icon: "💎", img: "./assets/items/gems/gem_bless.png", loai: "ENHANCE_GEM", type: "ENHANCE_GEM", gemTier: "BLESS", requiredRealmStt: 1, rarity: "MAGIC", giaMua: 600, giaBan: 200, sparkle: { enabled: true, preset: "SHIMMER", color: "#ffd966", intensity: 2 }, moTa: "Linh ngọc ước nguyện giúp tôi luyện trang bị từ +0 lên +15. Thất bại ở +4..+7 tụt 1 cấp." },
+  { id: "GEM_SOUL", maDo: "GEM_SOUL", tenDo: "Ngọc Tâm Linh", name: "Ngọc Tâm Linh", icon: "🔷", img: "./assets/items/gems/gem_soul.png", loai: "ENHANCE_GEM", type: "ENHANCE_GEM", gemTier: "SOUL", requiredRealmStt: 1, rarity: "EXL", giaMua: 1800, giaBan: 600, sparkle: { enabled: true, preset: "SHIMMER", color: "#6fd0ff", intensity: 2 }, moTa: "Ngọc tâm linh ngưng tụ thiên địa chi khí, cần thiết để cường hóa trang bị từ +7 trở lên." },
+  { id: "GEM_CHAOS", maDo: "GEM_CHAOS", tenDo: "Ngọc Hỗn Nguyên", name: "Ngọc Hỗn Nguyên", icon: "✨", img: "./assets/items/gems/gem_chaos.png", loai: "ENHANCE_GEM", type: "ENHANCE_GEM", gemTier: "CHAOS", requiredRealmStt: 1, rarity: "ANCIENT", giaMua: 4500, giaBan: 1500, sparkle: { enabled: true, preset: "MYTHIC_PRISM", color: "#f3d06b", intensity: 3 }, moTa: "Kỳ ngọc hỗn nguyên thượng cổ, xúc tác tôi luyện pháp bảo +10 đến +15." },
+  { id: "CHARM_BAO_VE", maDo: "CHARM_BAO_VE", tenDo: "Bùa Bảo Vệ", name: "Bùa Bảo Vệ", icon: "🧿", img: "./assets/items/gems/charm_bao_ve.png", loai: "PROTECT_CHARM", type: "PROTECT_CHARM", gemTier: "PROTECT", requiredRealmStt: 1, rarity: "EXL", currency: "LINH_THACH", shopTab: "PREMIUM", giaMua: 12, giaBan: 0, sparkle: { enabled: true, preset: "DEWDROP", color: "#5ef2a8", intensity: 2 }, moTa: "Hộ thân linh phù dùng khi cường hóa: nếu rèn thất bại, giữ nguyên cấp + hiện tại thay vì bị tụt." },
 
   ...breakthroughPills,
 ];
@@ -551,47 +601,360 @@ const monsterDefs = [
 const lootTables = {
   MOC_NHAN_LOOT: [
     { itemId: "STONE_LINH_NHO", chance: 0.8, min: 1, max: 2 },
+    { itemId: "MAT_THAO_DUOC", chance: 0.45, min: 1, max: 1 },
     { itemId: "WEAPON_KIEM_GO", chance: 0.2, min: 1, max: 1 },
     { itemId: "HAT_NON_LA", chance: 0.15, min: 1, max: 1 },
   ],
   SOI_LOOT: [
-    { itemId: "MAT_LANG_NANH", chance: 0.6, min: 1, max: 2 },
+    { itemId: "MAT_LANG_NANH", chance: 0.65, min: 1, max: 2 },
     { itemId: "MAT_DA_THU", chance: 0.5, min: 1, max: 2 },
-    { itemId: "STONE_LINH_NHO", chance: 0.35, min: 1, max: 2 },
+    { itemId: "MAT_THAO_DUOC", chance: 0.35, min: 1, max: 2 },
+    { itemId: "STONE_LINH_NHO", chance: 0.4, min: 1, max: 2 },
     { itemId: "HAT_KHAN_COT_DA", chance: 0.12, min: 1, max: 1 },
     { itemId: "BOOTS_GIAY_DA_SOI", chance: 0.1, min: 1, max: 1 },
   ],
   HEO_LOOT: [
-    { itemId: "STONE_LINH_NHO", chance: 0.6, min: 1, max: 2 },
+    { itemId: "STONE_LINH_NHO", chance: 0.65, min: 1, max: 2 },
     { itemId: "MAT_DA_THU", chance: 0.55, min: 1, max: 2 },
+    { itemId: "MAT_YEU_DAN_SO", chance: 0.3, min: 1, max: 1 },
     { itemId: "POTION_TIEU_HOAN", chance: 0.35, min: 1, max: 1 },
+    { itemId: "GEM_BLESS", chance: 0.14, min: 1, max: 1 },
     { itemId: "PANTS_QUAN_DA_THU", chance: 0.1, min: 1, max: 1 },
     { itemId: "BELT_DA_THO", chance: 0.12, min: 1, max: 1 },
   ],
   THAO_LOOT: [
-    { itemId: "MAT_THAO_DUOC", chance: 0.75, min: 1, max: 3 },
+    { itemId: "MAT_THAO_DUOC", chance: 0.8, min: 1, max: 3 },
+    { itemId: "MAT_LINH_CHI", chance: 0.4, min: 1, max: 2 },
+    { itemId: "MAT_YEU_DAN_SO", chance: 0.25, min: 1, max: 1 },
     { itemId: "POTION_TU_KHI", chance: 0.4, min: 1, max: 2 },
+    { itemId: "GEM_BLESS", chance: 0.2, min: 1, max: 1 },
+    { itemId: "GEM_SOUL", chance: 0.08, min: 1, max: 1 },
     { itemId: "WEAPON_DAO_SAT", chance: 0.1, min: 1, max: 1 },
     { itemId: "RING_DONG_TRAM", chance: 0.1, min: 1, max: 1 },
   ],
   HO_LUYEN_LOOT: [
     { itemId: "STONE_LINH_NHO", chance: 0.85, min: 2, max: 5 },
+    { itemId: "MAT_YEU_DAN_SO", chance: 0.55, min: 1, max: 2 },
+    { itemId: "MAT_HOA_TINH", chance: 0.5, min: 1, max: 2 },
+    { itemId: "MAT_LINH_CHI", chance: 0.4, min: 1, max: 2 },
     { itemId: "LINH_CAN_NGOC_TUY", chance: 0.3, min: 1, max: 1 },
+    { itemId: "GEM_BLESS", chance: 0.28, min: 1, max: 2 },
+    { itemId: "GEM_SOUL", chance: 0.16, min: 1, max: 1 },
+    { itemId: "GEM_CHAOS", chance: 0.07, min: 1, max: 1 },
     { itemId: "ARMOR_DAO_BAO_THANH_VAN", chance: 0.15, min: 1, max: 1 },
     { itemId: "AMULET_NGOC_BOI", chance: 0.12, min: 1, max: 1 },
   ],
   HUYET_LANG_LOOT: [
+    { itemId: "MAT_HUYET_NGUYET_TINH", chance: 0.85, min: 1, max: 2 },
+    { itemId: "MAT_HOA_TINH", chance: 0.65, min: 1, max: 2 },
+    { itemId: "MAT_YEU_DAN_SO", chance: 0.6, min: 2, max: 3 },
     { itemId: "THIEN_TAI_DIA_BAO", chance: 0.5, min: 1, max: 1 },
     { itemId: "POTION_TAY_TUY", chance: 0.25, min: 1, max: 1 },
+    { itemId: "GEM_BLESS", chance: 0.45, min: 1, max: 2 },
+    { itemId: "GEM_SOUL", chance: 0.3, min: 1, max: 2 },
+    { itemId: "GEM_CHAOS", chance: 0.16, min: 1, max: 1 },
+    { itemId: "CHARM_BAO_VE", chance: 0.14, min: 1, max: 1 },
     { itemId: "WEAPON_TRUC_KIEM", chance: 0.25, min: 1, max: 1 },
     { itemId: "RING_THACH_ANH", chance: 0.2, min: 1, max: 1 },
   ],
   BOSS_TAN_THU_LOOT: [
     { itemId: "STONE_LINH_NHO", chance: 0.9, min: 2, max: 4 },
     { itemId: "MAT_THAO_DUOC", chance: 0.8, min: 3, max: 5 },
+    { itemId: "MAT_LINH_CHI", chance: 0.7, min: 1, max: 3 },
+    { itemId: "MAT_YEU_DAN_SO", chance: 0.65, min: 1, max: 2 },
+    { itemId: "MAT_HOA_TINH", chance: 0.55, min: 1, max: 2 },
+    { itemId: "MAT_HUYET_NGUYET_TINH", chance: 0.45, min: 1, max: 1 },
     { itemId: "POTION_TIEU_HOAN", chance: 0.35, min: 1, max: 2 },
+    { itemId: "GEM_BLESS", chance: 0.4, min: 1, max: 2 },
+    { itemId: "GEM_SOUL", chance: 0.25, min: 1, max: 1 },
+    { itemId: "GEM_CHAOS", chance: 0.12, min: 1, max: 1 },
+    { itemId: "CHARM_BAO_VE", chance: 0.12, min: 1, max: 1 },
   ],
 };
+
+const phiThangRecipes = [
+  {
+    code: "RECIPE_DAN_PHI_THANG_HA",
+    category: "BREAKTHROUGH",
+    pillGroup: "DAN_PHI_THANG",
+    quality: "HA_PHAM",
+    qualityTier: 1,
+    qualityLabel: "Hạ phẩm",
+    name: "Luyện Phi Thăng Đan (Hạ phẩm)",
+    description: "Công thức sơ cấp dùng thảo dược, nanh sói và Linh Thạch Nhỏ. Thành công 70% (có 5% đột biến ra Trung phẩm). Dùng đột phá tăng 70%.",
+    outputItemCode: "DAN_PHI_THANG",
+    upgradedItemCode: "DAN_PHI_THANG_TRUNG",
+    outputQuantity: 1,
+    craftSuccessRate: 0.7,
+    mutationChance: 0.05,
+    requiredRealmStt: 1,
+    costXu: 80,
+    costLinhThach: 0,
+    ingredients: [
+      { itemCode: "MAT_THAO_DUOC", quantity: 4 },
+      { itemCode: "MAT_LANG_NANH", quantity: 2 },
+      { itemCode: "STONE_LINH_NHO", quantity: 3 },
+    ],
+  },
+  {
+    code: "RECIPE_DAN_PHI_THANG_TRUNG",
+    category: "BREAKTHROUGH",
+    pillGroup: "DAN_PHI_THANG",
+    quality: "TRUNG_PHAM",
+    qualityTier: 2,
+    qualityLabel: "Trung phẩm",
+    name: "Luyện Phi Thăng Đan (Trung phẩm)",
+    description: "Kết hợp Thanh Linh Chi, Yêu Đan và Linh Thạch Nhỏ. Thành công 62% (5% đột biến ra Thượng phẩm). Dùng đột phá tăng 80%.",
+    outputItemCode: "DAN_PHI_THANG_TRUNG",
+    upgradedItemCode: "DAN_PHI_THANG_THUONG",
+    outputQuantity: 1,
+    craftSuccessRate: 0.62,
+    mutationChance: 0.05,
+    requiredRealmStt: 1,
+    costXu: 160,
+    costLinhThach: 0,
+    ingredients: [
+      { itemCode: "MAT_THAO_DUOC", quantity: 6 },
+      { itemCode: "MAT_LINH_CHI", quantity: 2 },
+      { itemCode: "MAT_YEU_DAN_SO", quantity: 2 },
+      { itemCode: "STONE_LINH_NHO", quantity: 5 },
+    ],
+  },
+  {
+    code: "RECIPE_DAN_PHI_THANG_THUONG",
+    category: "BREAKTHROUGH",
+    pillGroup: "DAN_PHI_THANG",
+    quality: "THUONG_PHAM",
+    qualityTier: 3,
+    qualityLabel: "Thượng phẩm",
+    name: "Luyện Phi Thăng Đan (Thượng phẩm)",
+    description: "Hòa quyện Xích Hỏa Tinh cùng Linh Thạch thượng hạng. Thành công 55% (5% đột biến ra Cực phẩm). Dùng đột phá tăng 90%.",
+    outputItemCode: "DAN_PHI_THANG_THUONG",
+    upgradedItemCode: "DAN_PHI_THANG_CUC",
+    outputQuantity: 1,
+    craftSuccessRate: 0.55,
+    mutationChance: 0.05,
+    requiredRealmStt: 1,
+    costXu: 260,
+    costLinhThach: 4,
+    ingredients: [
+      { itemCode: "MAT_LINH_CHI", quantity: 4 },
+      { itemCode: "MAT_YEU_DAN_SO", quantity: 3 },
+      { itemCode: "MAT_HOA_TINH", quantity: 2 },
+      { itemCode: "STONE_LINH_NHO", quantity: 6 },
+    ],
+  },
+  {
+    code: "RECIPE_DAN_PHI_THANG_CUC",
+    category: "BREAKTHROUGH",
+    pillGroup: "DAN_PHI_THANG",
+    quality: "CUC_PHAM",
+    qualityTier: 4,
+    qualityLabel: "Cực phẩm",
+    name: "Luyện Phi Thăng Đan (Cực phẩm)",
+    description: "Đan phương tuyệt đỉnh dùng Huyết Nguyệt Tinh Phách. Thành công 45%. Đảm bảo 100% phá đại cảnh giới lên Khí Động.",
+    outputItemCode: "DAN_PHI_THANG_CUC",
+    upgradedItemCode: null,
+    outputQuantity: 1,
+    craftSuccessRate: 0.45,
+    mutationChance: 0,
+    requiredRealmStt: 1,
+    costXu: 400,
+    costLinhThach: 10,
+    ingredients: [
+      { itemCode: "MAT_LINH_CHI", quantity: 6 },
+      { itemCode: "MAT_HOA_TINH", quantity: 4 },
+      { itemCode: "MAT_HUYET_NGUYET_TINH", quantity: 1 },
+      { itemCode: "STONE_LINH_NHO", quantity: 8 },
+    ],
+  },
+];
+
+const scaledBreakthroughRecipes = breakthroughPillLines.slice(1).flatMap(([baseId, baseName, , fromRealm, toRealm], offsetIndex) => {
+  const tierIndex = offsetIndex + 2;
+  const presets = [
+    {
+      codeSuffix: "HA",
+      itemSuffix: "",
+      upgradedSuffix: "_TRUNG",
+      quality: "HA_PHAM",
+      qualityTier: 1,
+      qualityLabel: "Hạ phẩm",
+      craftSuccessRate: 0.68,
+      mutationChance: 0.05,
+      costXu: 100 + tierIndex * 45,
+      costLinhThach: 0,
+      ingredients: [
+        { itemCode: "MAT_THAO_DUOC", quantity: 4 + tierIndex },
+        { itemCode: "MAT_LINH_CHI", quantity: 1 + Math.ceil(tierIndex / 2) },
+        { itemCode: "STONE_LINH_NHO", quantity: 3 + tierIndex },
+      ],
+    },
+    {
+      codeSuffix: "TRUNG",
+      itemSuffix: "_TRUNG",
+      upgradedSuffix: "_THUONG",
+      quality: "TRUNG_PHAM",
+      qualityTier: 2,
+      qualityLabel: "Trung phẩm",
+      craftSuccessRate: 0.6,
+      mutationChance: 0.05,
+      costXu: 180 + tierIndex * 65,
+      costLinhThach: 0,
+      ingredients: [
+        { itemCode: "MAT_LINH_CHI", quantity: 2 + tierIndex },
+        { itemCode: "MAT_YEU_DAN_SO", quantity: 2 + Math.ceil(tierIndex / 2) },
+        { itemCode: "STONE_LINH_NHO", quantity: 5 + tierIndex },
+      ],
+    },
+    {
+      codeSuffix: "THUONG",
+      itemSuffix: "_THUONG",
+      upgradedSuffix: "_CUC",
+      quality: "THUONG_PHAM",
+      qualityTier: 3,
+      qualityLabel: "Thượng phẩm",
+      craftSuccessRate: 0.52,
+      mutationChance: 0.05,
+      costXu: 280 + tierIndex * 90,
+      costLinhThach: 3 + tierIndex * 2,
+      ingredients: [
+        { itemCode: "MAT_LINH_CHI", quantity: 3 + tierIndex },
+        { itemCode: "MAT_YEU_DAN_SO", quantity: 3 + Math.ceil(tierIndex / 2) },
+        { itemCode: "MAT_HOA_TINH", quantity: 1 + Math.ceil(tierIndex / 2) },
+        { itemCode: "STONE_LINH_NHO", quantity: 6 + tierIndex },
+      ],
+    },
+    {
+      codeSuffix: "CUC",
+      itemSuffix: "_CUC",
+      upgradedSuffix: null,
+      quality: "CUC_PHAM",
+      qualityTier: 4,
+      qualityLabel: "Cực phẩm",
+      craftSuccessRate: 0.42,
+      mutationChance: 0,
+      costXu: 420 + tierIndex * 120,
+      costLinhThach: 8 + tierIndex * 3,
+      ingredients: [
+        { itemCode: "MAT_HOA_TINH", quantity: 3 + Math.ceil(tierIndex / 2) },
+        { itemCode: "MAT_HUYET_NGUYET_TINH", quantity: 1 + Math.floor(tierIndex / 4) },
+        { itemCode: "STONE_LINH_NHO", quantity: 8 + tierIndex },
+      ],
+    },
+  ];
+  return presets.map((preset) => ({
+    code: `RECIPE_${baseId}_${preset.codeSuffix}`,
+    category: "BREAKTHROUGH",
+    pillGroup: baseId,
+    quality: preset.quality,
+    qualityTier: preset.qualityTier,
+    qualityLabel: preset.qualityLabel,
+    name: `Luyện ${baseName} (${preset.qualityLabel})`,
+    description: `Đan phương phá đại cảnh giới ${fromRealm} → ${toRealm} · Phẩm chất ${preset.qualityLabel}.`,
+    outputItemCode: `${baseId}${preset.itemSuffix}`,
+    upgradedItemCode: preset.upgradedSuffix == null ? null : `${baseId}${preset.upgradedSuffix}`,
+    outputQuantity: 1,
+    craftSuccessRate: preset.craftSuccessRate,
+    mutationChance: preset.mutationChance,
+    requiredRealmStt: Math.max(1, tierIndex - 1),
+    costXu: preset.costXu,
+    costLinhThach: preset.costLinhThach,
+    ingredients: preset.ingredients,
+  }));
+});
+
+const supportAlchemyRecipes = [
+  {
+    code: "RECIPE_POTION_TIEU_HOAN",
+    category: "SUPPORT",
+    quality: "HA_PHAM",
+    qualityTier: 1,
+    qualityLabel: "Hạ phẩm",
+    name: "Luyện Tiểu Hoàn Đan",
+    description: "Luyện đan hồi 120 HP từ Bạch Linh Thảo & Linh Thạch Nhỏ. Thành công 70% (5% đột biến thành Trung Hoàn Đan).",
+    outputItemCode: "POTION_TIEU_HOAN",
+    upgradedItemCode: "POTION_LINH_HOAN_TRUNG",
+    outputQuantity: 1,
+    craftSuccessRate: 0.7,
+    mutationChance: 0.05,
+    requiredRealmStt: 1,
+    costXu: 20,
+    costLinhThach: 0,
+    ingredients: [
+      { itemCode: "MAT_THAO_DUOC", quantity: 2 },
+      { itemCode: "STONE_LINH_NHO", quantity: 1 },
+    ],
+  },
+  {
+    code: "RECIPE_POTION_TU_KHI",
+    category: "SUPPORT",
+    quality: "HA_PHAM",
+    qualityTier: 1,
+    qualityLabel: "Hạ phẩm",
+    name: "Luyện Tụ Khí Đan",
+    description: "Luyện đan hồi 70 MP từ thảo dược và Nanh Hoang Sói. Thành công 70% (5% đột biến thành Ngưng Khí Đan).",
+    outputItemCode: "POTION_TU_KHI",
+    upgradedItemCode: "POTION_NGUNG_KHI_TRUNG",
+    outputQuantity: 1,
+    craftSuccessRate: 0.7,
+    mutationChance: 0.05,
+    requiredRealmStt: 1,
+    costXu: 25,
+    costLinhThach: 0,
+    ingredients: [
+      { itemCode: "MAT_THAO_DUOC", quantity: 2 },
+      { itemCode: "MAT_LANG_NANH", quantity: 1 },
+      { itemCode: "STONE_LINH_NHO", quantity: 1 },
+    ],
+  },
+  {
+    code: "RECIPE_ELIXIR_TU_VI_HA",
+    category: "CULTIVATION",
+    quality: "HA_PHAM",
+    qualityTier: 1,
+    qualityLabel: "Hạ phẩm",
+    name: "Luyện Tụ Linh Đan",
+    description: "Cô đọng Linh Thạch Nhỏ và Thanh Linh Chi thành Tụ Linh Đan (+280 Tu Vi). Thành công 65% (5% đột biến ra Trung phẩm +580 Tu Vi).",
+    outputItemCode: "ELIXIR_TU_VI_HA",
+    upgradedItemCode: "ELIXIR_TU_VI_TRUNG",
+    outputQuantity: 1,
+    craftSuccessRate: 0.65,
+    mutationChance: 0.05,
+    requiredRealmStt: 1,
+    costXu: 55,
+    costLinhThach: 0,
+    ingredients: [
+      { itemCode: "MAT_THAO_DUOC", quantity: 3 },
+      { itemCode: "MAT_LINH_CHI", quantity: 1 },
+      { itemCode: "STONE_LINH_NHO", quantity: 2 },
+    ],
+  },
+  {
+    code: "RECIPE_LINH_CAN_NGOC_TUY",
+    category: "CULTIVATION",
+    quality: "TRUNG_PHAM",
+    qualityTier: 2,
+    qualityLabel: "Trung phẩm",
+    name: "Luyện Linh Căn Ngọc Tủy",
+    description: "Luyện bảo dược bồi bổ linh căn (+80 Tu Vi Linh Căn). Thành công 58% (5% đột biến thành Thiên Tài Địa Bảo).",
+    outputItemCode: "LINH_CAN_NGOC_TUY",
+    upgradedItemCode: "THIEN_TAI_DIA_BAO",
+    outputQuantity: 1,
+    craftSuccessRate: 0.58,
+    mutationChance: 0.05,
+    requiredRealmStt: 1,
+    costXu: 120,
+    costLinhThach: 2,
+    ingredients: [
+      { itemCode: "MAT_LINH_CHI", quantity: 2 },
+      { itemCode: "MAT_YEU_DAN_SO", quantity: 2 },
+      { itemCode: "STONE_LINH_NHO", quantity: 3 },
+    ],
+  },
+];
+
+const alchemyRecipes = [...phiThangRecipes, ...scaledBreakthroughRecipes, ...supportAlchemyRecipes];
 
 const monsterSpawns = [
   { packId: "PACK_MOC_NHAN", templateId: "MOC_NHAN", centerX: 315, centerY: 215, count: 2, radius: 10, aggroRange: 24, leashDistance: 35, chaseDurationMs: 4000 },
@@ -624,11 +987,11 @@ const worlds = [
       { packId: "PACK_MOC_NHAN", templateId: "MOC_NHAN", centerX: 315, centerY: 215, count: 2, radius: 10, aggroRange: 24, leashDistance: 35, chaseDurationMs: 4000 }
     ],
     npcs: [
-      { id: "npc_truong_thon", name: "Trưởng Thôn Lý Huyền", x: 275, y: 190, color: "#f39c12", dialog: "Chào mừng đạo hữu đến Thanh Vân Trấn! Đạo đồ gian nan, nghịch thiên nhi hành. Hãy rèn luyện từ Mộc Nhân Thung cạnh đây rồi ra Bình Nguyên trừ yêu thú!" },
-      { id: "npc_tho_ren", name: "Thợ Rèn Thiết Trảm", x: 285, y: 220, color: "#e74c3c", dialog: "Lão phu là Thiết Trảm, thợ rèn đệ nhất trấn! Ta có đủ kiếm gỗ, đao sắt, nón trúc, giáp da sơ cấp cho người mới nhập môn. Đao kiếm sắc bén thì trừ yêu mới vững tâm!" },
-      { id: "npc_duoc_su", name: "Dược Sư Bạch Hạc", x: 325, y: 220, color: "#2ecc71", dialog: "Lão hủ Bạch Hạc chuyên luyện đan trị thương. Ta có Tiểu Hoàn Đan hồi phục khí huyết và Tụ Khí Đan bồi bổ chân nguyên. Đi xa chớ quên mang theo phòng thân!" },
-      { id: "npc_thuong_nhan", name: "Thương Nhân Tiền Vạn Hưng", x: 345, y: 190, color: "#3498db", dialog: "Bản tiệm Vạn Hưng thu mua mọi chiến lợi phẩm: Nanh sói, da thú, quặng sắt, linh thạch... Cần mua linh thạch tu luyện cứ tìm ta!" },
-      { id: "npc_giao_dau", name: "Giáo Đầu Tần Chấn", x: 300, y: 175, color: "#9b59b6", dialog: "Muốn đặt chân lên con đường tu tiên, căn cơ phải vững! Đạo hữu nhớ kiểm tra bảng Tu Vi (phím C), khi đột phá cảnh giới sẽ nhận được điểm tiềm năng để tăng cường thực lực!" },
+      { id: "npc_truong_thon", name: "Trưởng Thôn Lý Huyền", type: "dialog", role: "elder", x: 275, y: 190, color: "#f39c12", dialog: "Chào mừng đạo hữu đến Thanh Vân Trấn! Đạo đồ gian nan, nghịch thiên nhi hành. Hãy rèn luyện từ Mộc Nhân Thung cạnh đây rồi ra Bình Nguyên trừ yêu thú!" },
+      { id: "npc_tho_ren", name: "Thợ Rèn Thiết Trảm", type: "shop", role: "blacksmith", shopCategory: "EQUIPMENT", x: 285, y: 220, color: "#e74c3c", dialog: "Lão phu là Thiết Trảm, thợ rèn đệ nhất trấn! Ta có đủ kiếm gỗ, đao sắt, nón trúc, giáp da sơ cấp cho người mới nhập môn. Đao kiếm sắc bén thì trừ yêu mới vững tâm!" },
+      { id: "npc_duoc_su", name: "Dược Sư Bạch Hạc", type: "shop", role: "alchemist", shopCategory: "ALCHEMY", x: 325, y: 220, color: "#2ecc71", dialog: "Lão hủ Bạch Hạc chuyên luyện đan trị thương và đan phá cảnh. Ta bán Tiểu Hoàn Đan, Tụ Khí Đan cùng thảo dược luyện đan, và có Lò Luyện Đan cho đạo hữu trổ tài!" },
+      { id: "npc_thuong_nhan", name: "Thương Nhân Tiền Vạn Hưng", type: "shop", role: "merchant", shopCategory: "ALL", x: 345, y: 190, color: "#3498db", dialog: "Bản tiệm Vạn Hưng thu mua mọi chiến lợi phẩm: Nanh sói, da thú, quặng sắt, linh thạch... Cần mua linh thạch tu luyện cứ tìm ta!" },
+      { id: "npc_giao_dau", name: "Giáo Đầu Tần Chấn", type: "dialog", role: "instructor", x: 300, y: 175, color: "#9b59b6", dialog: "Muốn đặt chân lên con đường tu tiên, căn cơ phải vững! Đạo hữu nhớ kiểm tra bảng Tu Vi (phím C), khi đột phá cảnh giới sẽ nhận được điểm tiềm năng để tăng cường thực lực!" },
     ],
   },
   {
@@ -643,7 +1006,7 @@ const worlds = [
     monsters: monsterDefs.filter((m) => ["HOANG_SOI", "THO_HEO", "DOC_THAO"].includes(m.code)),
     monsterSpawns: monsterSpawns.filter((s) => ["PACK_HOANG_SOI", "PACK_THO_HEO", "PACK_DOC_THAO"].includes(s.packId)),
     npcs: [
-      { id: "npc_tien_tram", name: "Vệ Sĩ Tiền Trạm", x: 40, y: 195, color: "#1abc9c", dialog: "Phía trước là đồng hoang đầy rẫy Hoang Sói và Thổ Heo Rừng hung hãn. Đạo hữu nhớ trang bị đầy đủ đao giáp trước khi xông vào!" },
+      { id: "npc_tien_tram", name: "Vệ Sĩ Tiền Trạm", type: "dialog", role: "guard", x: 40, y: 195, color: "#1abc9c", dialog: "Phía trước là đồng hoang đầy rẫy Hoang Sói và Thổ Heo Rừng hung hãn. Đạo hữu nhớ trang bị đầy đủ đao giáp trước khi xông vào!" },
     ],
   },
   {
@@ -661,7 +1024,7 @@ const worlds = [
       { packId: "PACK_RUNG_DOC_THAO", templateId: "DOC_THAO", centerX: 460, centerY: 110, count: 4, radius: 18, aggroRange: 40, leashDistance: 80, chaseDurationMs: 8500 },
     ],
     npcs: [
-      { id: "npc_lam_tuan_su", name: "Lâm Tuần Sứ Trình Phong", x: 285, y: 185, color: "#6dbd72", dialog: "Rừng Rậm Thanh Vân có Bạch Linh Thảo mọc ven lối mòn. Hạ Độc Thảo Yêu rồi thu thập linh thảo, đừng để chúng kéo đạo hữu vào bụi rậm!" },
+      { id: "npc_lam_tuan_su", name: "Lâm Tuần Sứ Trình Phong", type: "dialog", role: "ranger", x: 285, y: 185, color: "#6dbd72", dialog: "Rừng Rậm Thanh Vân có Bạch Linh Thảo mọc ven lối mòn. Hạ Độc Thảo Yêu rồi thu thập linh thảo, đừng để chúng kéo đạo hữu vào bụi rậm!" },
     ],
   },
   {
@@ -682,7 +1045,7 @@ const worlds = [
       { packId: "PACK_COC_BOSS_TAN_THU", templateId: "BOSS_TAN_THU", centerX: 548, centerY: 200, count: 1, radius: 5, aggroRange: 48, leashDistance: 64, chaseDurationMs: 8500 },
     ],
     npcs: [
-      { id: "npc_an_cu", name: "Tu Sĩ Ẩn Cư", x: 310, y: 190, color: "#ecf0f1", dialog: "Sơn cốc này linh khí u ám, sâu trong rừng có Xích Luyện Hổ và Huyết Nguyệt Lang vương cực kỳ nguy hiểm. Chưa đạt Khí Động kỳ chớ dại dột khiêu chiến!" },
+      { id: "npc_an_cu", name: "Tu Sĩ Ẩn Cư", type: "dialog", role: "hermit", x: 310, y: 190, color: "#ecf0f1", dialog: "Sơn cốc này linh khí u ám, sâu trong rừng có Xích Luyện Hổ và Huyết Nguyệt Lang vương cực kỳ nguy hiểm. Chưa đạt Khí Động kỳ chớ dại dột khiêu chiến!" },
     ],
   },
   {
@@ -702,4 +1065,4 @@ const worlds = [
   },
 ];
 
-module.exports = { realms, roots, items, skills: skillCatalog, commonSkills, passiveSkills, monsterDefs, lootTables, monsterSpawns, worlds };
+module.exports = { realms, roots, items, skills: skillCatalog, commonSkills, passiveSkills, monsterDefs, lootTables, monsterSpawns, worlds, alchemyRecipes, pillQualityTiers };

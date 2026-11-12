@@ -1,7 +1,7 @@
 const crypto = require('node:crypto');
 const { DomainError } = require('../domain');
 const { validateRequestId } = require('../inventory/inventory-service');
-const { BALANCE, deriveStats, mitigateDamage, affinityProfile, affinityCritBonus, elementalStrength } = require('../data/balance');
+const { BALANCE, deriveStats, resolveEquipmentModifiers, resolvePassiveModifiers, effectiveMaxVitals, mitigateDamage, affinityProfile, affinityCritBonus, elementalStrength } = require('../data/balance');
 const { createWorldRuntime } = require('./world-runtime');
 const { findMonsterRoute, clearMonsterSegment } = require('./monster-route');
 
@@ -17,6 +17,15 @@ const POSITION_PERSIST_RETRY_MAX_MS = 30000;
 const MONSTER_UPDATE_BATCH_SIZE = 100;
 const MAX_AREA_TARGETS = 12;
 const MONSTER_EFFECTS = new Set(['armor_break', 'burn', 'curse', 'freeze', 'root', 'slow', 'stun']);
+const MONSTER_ELEMENT_DEBUFFS = {
+  HOA: { type: 'burn', value: 2, durationMs: 4000, chance: 0.35 },
+  MOC: { type: 'poison', value: 2, durationMs: 4000, chance: 0.35 },
+  AM: { type: 'curse', value: 15, durationMs: 5000, chance: 0.4 },
+  KIM: { type: 'armor_break', value: 15, durationMs: 4000, chance: 0.35 },
+  THO: { type: 'slow', value: 25, durationMs: 4000, chance: 0.35 },
+  THUY: { type: 'slow', value: 25, durationMs: 4000, chance: 0.35 },
+  LOI: { type: 'slow', value: 25, durationMs: 4000, chance: 0.35 },
+};
 
 function createGameplayService({ io, auth, players, store, catalog, world, quests, cluster = null }) {
   const runtime = createWorldRuntime({ world, catalog });
@@ -79,16 +88,53 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
         if (cluster && !await cluster.owns(room.mapCode)) continue;
         for (const session of room.players.values()) {
           if (!(Number(session.hp) > 0)) continue;
+          const now = Date.now();
+          const { passive } = syncEffectiveVitals(session);
+          const beforeDebuffKeys = Object.keys(session.debuffs || {});
+          const debuffs = currentDebuffs(session, now);
+          const debuffsExpired = Object.keys(debuffs).length !== beforeDebuffKeys.length;
+          let debuffTicked = false;
+          const dotRate = debuffPercent(debuffs, 'burn') + debuffPercent(debuffs, 'poison');
+          if (dotRate > 0) {
+            const dotDamage = Math.min(
+              Math.max(0, Number(session.hp || 0)),
+              Math.max(1, Math.round(Number(session.maxHp || 0) * dotRate)),
+            );
+            if (dotDamage > 0) {
+              try {
+                const mutation = await store.updateVitals(
+                  session.userId,
+                  `dot_${crypto.randomUUID()}`,
+                  'MONSTER_DEBUFF_DOT',
+                  { hp: -dotDamage, maxHp: session.maxHp, maxMp: session.maxMp },
+                );
+                if (!(Number(session.hp) > 0)) continue;
+                session.hp = Number(mutation.result.hp);
+                if (Number.isFinite(Number(mutation.result.maxHp))) session.maxHp = Number(mutation.result.maxHp);
+                if (Number.isFinite(Number(mutation.result.maxMp))) session.maxMp = Number(mutation.result.maxMp);
+                debuffTicked = true;
+                if (!(Number(session.hp) > 0)) {
+                  session.hp = 0;
+                  session.buffs = {};
+                  session.debuffs = {};
+                  emitPlayerState(session);
+                  continue;
+                }
+              } catch { /* tick sau sẽ thử lại */ }
+            }
+          }
           const buffs = currentBuffs(session);
           const vitals = buffs.buff_vitals;
           const vitalsPerSecond = vitals ? buffPercent(buffs, 'buff_vitals') / Math.max(1, Number(vitals.durationSec || 1)) : 0;
-          const hpRate = buffPercent(buffs, 'buff_hp_regen') + vitalsPerSecond;
+          const buffHpRate = buffPercent(buffs, 'buff_hp_regen') + vitalsPerSecond;
           const buffMpRate = buffPercent(buffs, 'buff_mp_regen') + vitalsPerSecond;
-          const buffActive = hpRate > 0 || buffMpRate > 0;
+          const hpRate = buffHpRate + Math.max(0, Number(passive.hpRegenPct || 0));
+          const buffActive = buffHpRate > 0 || buffMpRate > 0;
           const mpRate = buffMpRate + Math.max(0, Number(BALANCE.regen?.mpPctPerSec) || 0);
           if (hpRate <= 0 && mpRate <= 0) {
             session.regenCarryHp = 0;
             session.regenCarryMp = 0;
+            if (debuffsExpired || debuffTicked) emitPlayerState(session);
             continue;
           }
           const hpGain = Math.min(Math.max(0, Number(session.maxHp || 0) - Number(session.hp || 0)),
@@ -99,22 +145,33 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
           const mp = Math.floor(mpGain);
           session.regenCarryHp = hpGain - hp;
           session.regenCarryMp = mpGain - mp;
-          if (hp <= 0 && mp <= 0) continue;
-          if (!buffActive) {
-            // Chỉ có hồi tự nhiên: gom tới một đợt (hoặc tới khi đầy MP) rồi mới ghi DB.
+          if (hp <= 0 && mp <= 0) {
+            if (debuffsExpired || debuffTicked) emitPlayerState(session);
+            continue;
+          }
+          if (!buffActive && hp <= 0) {
+            // Chỉ có hồi MP tự nhiên: gom tới một đợt (hoặc tới khi đầy MP) rồi mới ghi DB.
             const missingMp = Math.max(0, Number(session.maxMp || 0) - Number(session.mp || 0));
             const batch = Math.max(1, Math.ceil(Number(session.maxMp || 0) * (Number(BALANCE.regen?.mpFlushPct) || 0)));
             if (mp < batch && mp < missingMp) {
               session.regenCarryMp = mpGain;
+              if (debuffsExpired || debuffTicked) emitPlayerState(session);
               continue;
             }
           }
           try {
-            const mutation = await store.updateVitals(session.userId, `regen_${crypto.randomUUID()}`, buffActive ? 'BUFF_REGEN' : 'NATURAL_REGEN', { hp, mp });
+            const mutation = await store.updateVitals(
+              session.userId,
+              `regen_${crypto.randomUUID()}`,
+              buffActive ? 'BUFF_REGEN' : 'NATURAL_REGEN',
+              { hp, mp, maxHp: session.maxHp, maxMp: session.maxMp },
+            );
             if (!(Number(session.hp) > 0)) continue; // chết trong lúc chờ DB: không hồi sinh qua regen
             session.hp = Number(mutation.result.hp);
             session.mp = Number(mutation.result.mp);
-            io.to(session.socketId).emit('player_state_update', { hp: session.hp, maxHp: session.maxHp, mp: session.mp, maxMp: session.maxMp, buffs: session.buffs });
+            if (Number.isFinite(Number(mutation.result.maxHp))) session.maxHp = Number(mutation.result.maxHp);
+            if (Number.isFinite(Number(mutation.result.maxMp))) session.maxMp = Number(mutation.result.maxMp);
+            emitPlayerState(session);
           } catch { /* tick sau sẽ thử lại */ }
         }
         cluster?.markDirty(room.mapCode);
@@ -139,6 +196,7 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
     while (pendingOperations.size) await Promise.allSettled([...pendingOperations]);
   }
   function sessionDto(session) {
+    const mods = resolveEquipmentModifiers(session.equipment || {});
     return {
       id: session.socketId,
       name: session.name,
@@ -148,6 +206,8 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
       mapCode: session.mapCode,
       hp: session.hp,
       maxHp: session.maxHp,
+      glowTier: mods.glowTier || 0,
+      enhanceMaxLevel: mods.enhanceMaxLevel || 0,
     };
   }
 
@@ -216,7 +276,18 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
     return {
       mapCode: session.mapCode,
       mapVersion: Number(map.version || 0),
-      player: { ...player, x: session.x, y: session.y, mapCode: session.mapCode, mapId: session.mapCode },
+      player: {
+        ...player,
+        hp: session.hp,
+        maxHp: session.maxHp,
+        mp: session.mp,
+        maxMp: session.maxMp,
+        debuffs: currentDebuffs(session),
+        x: session.x,
+        y: session.y,
+        mapCode: session.mapCode,
+        mapId: session.mapCode,
+      },
       players: others,
       monsters: runtime.listMonsters(session.mapCode),
       groundItems: runtime.listDrops(session.mapCode),
@@ -250,10 +321,12 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
         y: session.y,
         mapCode: session.mapCode,
         buffs: session.buffs,
+        debuffs: session.debuffs,
         cooldowns: session.cooldowns,
         socketId: socket.id,
       });
       session = runtime.getPlayer(session.mapCode, socket.id);
+      syncEffectiveVitals(session, player);
       await socket.join(roomName(session.mapCode));
       return emitWorldInit(socket, session, players.decorate({ ...player, x: session.x, y: session.y, mapCode: session.mapCode }));
     }
@@ -297,10 +370,12 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
       y: point.y,
       mapCode: map.code,
       buffs: restoredOnlineState?.buffs || {},
+      debuffs: restoredOnlineState?.debuffs || {},
       cooldowns: restoredOnlineState?.cooldowns || new Map(),
     }, socket.id);
     if (!entered) throw new DomainError('WORLD_NOT_FOUND', 'Bản đồ không tồn tại hoặc chưa publish', 404);
     session = entered.session;
+    syncEffectiveVitals(session, player);
     socket.data.mapCode = map.code;
     await socket.join(roomName(map.code));
     const result = emitWorldInit(socket, session, player);
@@ -321,26 +396,38 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
 
   async function syncPlayerState(session) {
     const fresh = await players.snapshot(session.userId);
+    const freshRealm = fresh.canhGioi || catalog.getRealmByCode?.(fresh.realmCode) || null;
     Object.assign(session, {
       name: fresh.name,
       gender: fresh.gender,
       linhCan: fresh.linhCan,
       realmCode: fresh.realmCode,
       realmStage: fresh.realmStage,
+      tangTuVi: fresh.realmStage,
+      realm: Number(fresh.realm ?? freshRealm?.stt ?? 1),
+      canhGioi: freshRealm,
+      tenCanhGioi: fresh.tenCanhGioi || freshRealm?.tenCanhGioi || null,
       stats: fresh.stats,
       derivedStats: fresh.derivedStats,
       equipment: fresh.equipment,
       learnedSkills: fresh.learnedSkills,
       equippedSkills: fresh.equippedSkills,
       hp: fresh.hp,
-      maxHp: fresh.maxHp,
       mp: fresh.mp,
-      maxMp: fresh.maxMp,
       xu: fresh.xu,
+      linhThach: fresh.linhThach,
+      inventoryCapacity: fresh.inventoryCapacity,
+      tuVi: fresh.tuVi,
+      tuViHienTai: fresh.tuViHienTai,
+      tuViLenCap: fresh.tuViLenCap,
+      tuViLinhCan: fresh.tuViLinhCan,
+      unspentStatPoints: fresh.unspentStatPoints,
+      combatPower: fresh.combatPower,
       x: session.x,
       y: session.y,
       mapCode: session.mapCode,
     });
+    syncEffectiveVitals(session, fresh);
     return session;
   }
 
@@ -361,10 +448,14 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
     const now = Date.now();
     if (now - session.lastMovementAt < 15) throw new DomainError('COMMAND_RATE_LIMITED', 'Gói di chuyển gửi quá thường xuyên', 429);
     const elapsed = Math.max(0, Math.min(0.5, (now - session.lastMovementAt) / 1000));
-    const speedBuff = currentBuffs(session).buff_spd || currentBuffs(session).speed;
+    const buffs = currentBuffs(session);
+    const debuffs = currentDebuffs(session, now);
+    const passive = combatModifiers(session);
+    const speedBuff = buffs.buff_spd || buffs.speed;
     const speedBonus = Number(session.stats?.agi || 0) * 0.08;
     const speedPercent = speedBuff && speedBuff.expiresAt > now ? Math.max(0, Number(speedBuff.value || 0)) : 0;
-    const movementSpeed = (BASE_MOVEMENT_SPEED + speedBonus) * (1 + speedPercent / 100);
+    const slowPenalty = Math.min(0.75, debuffPercent(debuffs, 'slow'));
+    const movementSpeed = (BASE_MOVEMENT_SPEED + speedBonus) * Math.max(0.25, 1 + speedPercent / 100 + passive.speedPct - slowPenalty);
     const maxBudget = movementSpeed * 0.45;
     session.movementBudget = Math.min(maxBudget, (session.movementBudget || 0) + elapsed * movementSpeed);
     session.lastMovementAt = now;
@@ -477,10 +568,12 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
       y: destination.y,
       mapCode: target.code,
       buffs: session.buffs,
+      debuffs: session.debuffs,
       cooldowns: session.cooldowns,
     }, socket.id);
     if (!entered) throw new DomainError('WORLD_NOT_FOUND', 'Bản đồ đích không tồn tại hoặc chưa publish', 404);
     session = entered.session;
+    syncEffectiveVitals(session, persisted);
     socket.data.mapCode = target.code;
     await socket.join(roomName(target.code));
     const result = emitWorldInit(socket, session, persisted);
@@ -605,7 +698,7 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
 
           monster.state = 'attack';
           monster.nextAttackAt = now + Math.max(800, 1300 / Math.max(0.5, Number(monster.speed || 1)));
-          const derived = target.derivedStats || deriveStats(target.stats || {}, target.equipment || {});
+          const { derived, passive } = syncEffectiveVitals(target);
           const miss = Math.random() < Math.max(0, Math.min(0.35, Number(derived.evasion || 0)));
           const magic = String(monster.attackType || '').toUpperCase() === 'MAGIC';
           const attack = magic ? (monster.mAtk ?? monster.atk) : monster.atk;
@@ -614,27 +707,46 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
           const curseFactor = curse ? 1 - Math.min(0.75, Math.max(0, Number(curse.value || 0)) / 100) : 1;
           const rawDamage = Math.max(1, Math.floor((Number(attack || 1) + crypto.randomInt(0, 4)) * curseFactor));
           const buffs = currentBuffs(target);
-          const passive = combatModifiers(target);
-          const defense = (magic ? derived.mDef : derived.pDef) * (1 + buffPercent(buffs, 'buff_def') + passive.defensePct);
-          const mitigated = miss ? 0 : Math.ceil(mitigateDamage(rawDamage, defense));
+          const debuffs = currentDebuffs(target, now);
+          const armorBreakPenalty = Math.min(0.7, debuffPercent(debuffs, 'armor_break'));
+          const defense = (magic ? derived.mDef : derived.pDef) * Math.max(0.2, 1 + buffPercent(buffs, 'buff_def') + passive.defensePct - armorBreakPenalty);
+          const rawMitigated = miss ? 0 : Math.ceil(mitigateDamage(rawDamage, defense));
+          const exlReduce = Math.min(0.45, Number(derived.exl?.dmgReducePct || 0));
+          const mitigated = rawMitigated > 0 ? Math.max(1, Math.ceil(rawMitigated * (1 - exlReduce))) : 0;
           // Khiên hộ thể là lớp hấp thụ (castSkill gán buffs.shield.absorb): đỡ sát thương tới khi cạn hoặc hết giờ.
           const shield = buffs.shield;
           const absorbed = shield ? Math.min(Math.max(0, Math.floor(Number(shield.absorb || 0))), mitigated) : 0;
           const damage = Math.min(Math.max(0, Number(target.hp || 0)), mitigated - absorbed);
           try {
             if (damage > 0) {
-              const mutation = await store.updateVitals(target.userId, `mob_${crypto.randomUUID()}`, 'MONSTER_ATTACK', { hp: -damage });
+              const mutation = await store.updateVitals(
+                target.userId,
+                `mob_${crypto.randomUUID()}`,
+                'MONSTER_ATTACK',
+                { hp: -damage, maxHp: target.maxHp, maxMp: target.maxMp },
+              );
               target.hp = Number(mutation.result.hp);
+            }
+            const reflectPct = Math.min(0.35, Number(derived.exl?.reflectPct || 0));
+            const reflectDmg = (!miss && damage > 0 && reflectPct > 0 && Number(monster.hp || 0) > 1)
+              ? Math.min(Math.max(0, Number(monster.hp) - 1), Math.floor(damage * reflectPct))
+              : 0;
+            if (reflectDmg > 0) {
+              runtime.damageMonster(room.mapCode, monster.id, reflectDmg);
             }
             if (shield && absorbed > 0) {
               shield.absorb = Math.max(0, Number(shield.absorb || 0) - absorbed);
               if (shield.absorb <= 0) delete buffs.shield;
             }
             const died = !(Number(target.hp) > 0);
+            let appliedDebuff = null;
             if (died) {
               target.hp = 0;
               target.buffs = {};
+              target.debuffs = {};
               monster.targetId = null;
+            } else if (!miss) {
+              appliedDebuff = applyPlayerDebuff(target, monster, passive, now);
             }
             const dto = { ...monster, x: monster.x, y: monster.y, state: 'attack', targetId: target.socketId };
             io.to(roomName(room.mapCode)).emit('monster_update', { monsters: [dto] });
@@ -647,8 +759,10 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
               dead: died,
               hp: target.hp,
               maxHp: target.maxHp,
+              appliedDebuff,
+              debuffs: currentDebuffs(target, now),
             });
-            io.to(target.socketId).emit('player_state_update', { hp: target.hp, maxHp: target.maxHp, mp: target.mp, maxMp: target.maxMp, buffs: target.buffs });
+            emitPlayerState(target);
           } catch {
             monster.nextAttackAt = Date.now() + 1000;
           }
@@ -675,19 +789,112 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
     return Math.max(0, Number(buffs[key]?.value || 0)) / 100;
   }
 
-  function combatModifiers(session) {
-    const modifiers = { defensePct: 0, shieldPct: 0, skillDamagePct: 0, critPct: 0, cooldownPct: 0, pDefPenPct: 0, statusEffectPct: 0 };
-    const learned = new Set(session.learnedSkills || []);
-    if (!learned.size) return modifiers;
-    for (const skill of catalog.listSkills()) {
-      if (!learned.has(skill.code) || skill.category !== 'PASSIVE') continue;
-      if (skill.linhCan !== session.linhCan && skill.linhCan !== 'COMMON') continue;
-      for (const key of Object.keys(modifiers)) {
-        const value = Number(skill.passiveModifiers?.[key] || 0);
-        if (Number.isFinite(value) && value > 0) modifiers[key] += value;
-      }
+  function currentDebuffs(session, now = Date.now()) {
+    if (!session.debuffs || typeof session.debuffs !== 'object') session.debuffs = {};
+    for (const [key, debuff] of Object.entries(session.debuffs)) {
+      if (!debuff || Number(debuff.expiresAt || 0) <= now) delete session.debuffs[key];
     }
-    return modifiers;
+    return session.debuffs;
+  }
+
+  function debuffPercent(debuffs, key) {
+    return Math.max(0, Number(debuffs?.[key]?.value || 0)) / 100;
+  }
+
+  function cleanseSessionDebuffs(session) {
+    const removed = Object.keys(currentDebuffs(session));
+    session.debuffs = {};
+    return removed;
+  }
+
+  function emitPlayerState(session) {
+    const mods = resolveEquipmentModifiers(session.equipment || {});
+    io.to(session.socketId).emit('player_state_update', {
+      hp: session.hp,
+      maxHp: session.maxHp,
+      mp: session.mp,
+      maxMp: session.maxMp,
+      buffs: session.buffs,
+      debuffs: currentDebuffs(session),
+      ...(session.stats !== undefined ? { stats: session.stats } : {}),
+      ...(session.derivedStats !== undefined ? { derivedStats: session.derivedStats } : {}),
+      glowTier: mods.glowTier || 0,
+      enhanceMaxLevel: mods.enhanceMaxLevel || 0,
+      ...(session.unspentStatPoints !== undefined ? { unspentStatPoints: session.unspentStatPoints } : {}),
+      ...(session.xu !== undefined ? { xu: session.xu } : {}),
+      ...(session.linhThach !== undefined ? { linhThach: session.linhThach } : {}),
+      ...(session.inventoryCapacity !== undefined ? { inventoryCapacity: session.inventoryCapacity } : {}),
+      ...(session.tuVi !== undefined ? { tuVi: session.tuVi } : {}),
+      ...(session.tuViHienTai !== undefined ? { tuViHienTai: session.tuViHienTai } : {}),
+      ...(session.tuViLenCap !== undefined ? { tuViLenCap: session.tuViLenCap } : {}),
+      ...(session.tuViLinhCan !== undefined ? { tuViLinhCan: session.tuViLinhCan } : {}),
+      ...(session.combatPower !== undefined ? { combatPower: session.combatPower } : {}),
+      ...(session.realmCode !== undefined ? { realmCode: session.realmCode } : {}),
+      ...(session.realmStage !== undefined ? { realmStage: session.realmStage, tangTuVi: session.realmStage } : {}),
+      ...(session.realm !== undefined ? { realm: session.realm } : {}),
+      ...(session.canhGioi !== undefined ? { canhGioi: session.canhGioi } : {}),
+      ...(session.tenCanhGioi !== undefined ? { tenCanhGioi: session.tenCanhGioi } : {}),
+    });
+  }
+
+  function combatModifiers(session) {
+    return resolvePassiveModifiers(catalog.listSkills(), session.learnedSkills, session.linhCan);
+  }
+
+  function syncEffectiveVitals(session, baseSnapshot = null) {
+    const derived = session.derivedStats || deriveStats(session.stats || {}, session.equipment || {});
+    if (baseSnapshot) {
+      session.baseMaxHp = baseSnapshot.maxHp;
+      session.baseMaxMp = baseSnapshot.maxMp;
+    } else if (session.baseMaxHp == null) {
+      session.baseMaxHp = session.maxHp;
+      session.baseMaxMp = session.maxMp;
+    }
+    const passive = combatModifiers(session);
+    const effective = effectiveMaxVitals({ maxHp: session.baseMaxHp, maxMp: session.baseMaxMp }, derived, passive);
+    session.maxHp = effective.maxHp;
+    session.maxMp = effective.maxMp;
+    if (Number(session.hp) > session.maxHp) session.hp = session.maxHp;
+    if (Number(session.mp) > session.maxMp) session.mp = session.maxMp;
+    return { derived, passive, effective };
+  }
+
+  function resolveMonsterDebuff(monster) {
+    if (monster?.debuff && typeof monster.debuff === 'object' && monster.debuff.type) {
+      return {
+        type: String(monster.debuff.type).toLowerCase(),
+        value: Math.max(0, Number(monster.debuff.value ?? 5)),
+        durationMs: Math.max(500, Number(monster.debuff.durationMs ?? 4000)),
+        chance: Number(monster.debuff.chance ?? 1),
+      };
+    }
+    if (!['ELITE', 'BOSS'].includes(String(monster?.type || '').toUpperCase())) return null;
+    const element = String(
+      monster.linhCan || monster.element || (Array.isArray(monster.nguHanh) ? monster.nguHanh[0] : monster.nguHanh) || '',
+    ).toUpperCase();
+    return MONSTER_ELEMENT_DEBUFFS[element] || null;
+  }
+
+  function applyPlayerDebuff(target, monster, passive, now = Date.now()) {
+    const spec = resolveMonsterDebuff(monster);
+    if (!spec) return null;
+    const baseChance = Math.min(1, Math.max(0, Number(spec.chance ?? 0.35)));
+    if (baseChance <= 0 || Math.random() >= baseChance) return null;
+    const resist = Math.min(1, Math.max(0, Number(passive?.resistPct || 0)));
+    if (resist >= 1 || (resist > 0 && Math.random() < resist)) {
+      return { type: spec.type, resisted: true };
+    }
+    const durationMs = Math.max(500, Math.round(Number(spec.durationMs || 4000) * Math.max(0.25, 1 - resist * 0.5)));
+    const debuffs = currentDebuffs(target, now);
+    debuffs[spec.type] = {
+      type: spec.type,
+      value: Math.max(0, Number(spec.value || 0)),
+      durationMs,
+      appliedAt: now,
+      expiresAt: now + durationMs,
+      sourceId: monster.id,
+    };
+    return { type: spec.type, value: debuffs[spec.type].value, durationMs, expiresAt: debuffs[spec.type].expiresAt, resisted: false };
   }
 
   function skillCooldownMs(session, skill, passive) {
@@ -748,8 +955,44 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
     return skill;
   }
 
+  function rollEquipmentDropTraits(definition, monster) {
+    if (String(definition?.type || definition?.loai || '').toUpperCase() !== 'EQUIPMENT') {
+      return { rarity: definition?.rarity || 'NORMAL', hasLuck: false, exlOptions: [] };
+    }
+    const baseRarity = String(definition.rarity || 'NORMAL').toUpperCase();
+    const monsterType = String(monster?.type || 'NORMAL').toUpperCase();
+    const exlChance = monsterType === 'BOSS' ? 0.35 : monsterType === 'ELITE' ? 0.15 : 0.04;
+    const magicChance = monsterType === 'BOSS' ? 0.45 : monsterType === 'ELITE' ? 0.35 : 0.2;
+    const luckChance = monsterType === 'BOSS' ? 0.4 : monsterType === 'ELITE' ? 0.28 : 0.15;
+    let rarity = baseRarity;
+    const rarityRoll = crypto.randomInt(0, 10_000) / 10_000;
+    if (baseRarity !== 'ANCIENT') {
+      if (baseRarity === 'EXL' || rarityRoll < exlChance) rarity = 'EXL';
+      else if (baseRarity === 'MAGIC' || rarityRoll < exlChance + magicChance) rarity = 'MAGIC';
+    }
+    const hasLuck = Boolean(definition.hasLuck) || (crypto.randomInt(0, 10_000) / 10_000) < luckChance;
+    const exlOptions = [];
+    if (rarity === 'EXL' || rarity === 'ANCIENT') {
+      const equipSlot = String(definition?.slot || '').toLowerCase().replace(/^helmet$/, 'hat');
+      const pool = Object.values(BALANCE.exlOptions || {}).filter((opt) =>
+        !Array.isArray(opt.slots) || !opt.slots.length || (equipSlot && opt.slots.includes(equipSlot)),
+      );
+      if (pool.length) {
+        const optCount = monsterType === 'BOSS' || rarity === 'ANCIENT' ? 2 : (crypto.randomInt(0, 100) < 30 ? 2 : 1);
+        const remaining = [...pool];
+        for (let i = 0; i < Math.min(optCount, remaining.length); i += 1) {
+          const pickedIdx = crypto.randomInt(0, remaining.length);
+          const [picked] = remaining.splice(pickedIdx, 1);
+          exlOptions.push({ code: picked.code, label: picked.label, val: picked.val });
+        }
+      }
+    }
+    return { rarity, hasLuck, exlOptions };
+  }
+
   function damageFor(session, monster, skill, passive, secondary, basicAttack) {
     const derived = session.derivedStats || deriveStats(session.stats || {}, session.equipment || {});
+    const exl = derived.exl || {};
     const magic = String(skill ? skill.type : basicAttack?.damageType).toUpperCase() === 'MAGIC';
     const attack = magic ? derived.mAtk : derived.pAtk;
     const scalingKey = skill?.scalingStat || basicAttack?.scalingStat || (magic ? 'ene' : 'str');
@@ -759,19 +1002,24 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
     const multiplier = skill ? Math.max(0.1, Number(skill.satThuong || 0)) * (1 + rootDamageBonus) : 1;
     const defense = Math.max(0, Number(monster.def || 0) * 2)
       * (activeStatus(monster, 'armor_break') ? 0.75 : 1)
-      * (magic ? 1 : 1 - Math.min(0.75, passive.pDefPenPct));
+      * (magic ? 1 : 1 - Math.min(0.75, passive.pDefPenPct))
+      * (1 - Math.min(0.5, Number(exl.armorPiercePct || 0)));
     const weaponMultiplier = skill ? 1 : Number(basicAttack?.damageMultiplier || 1);
-    const raw = (attack * (skill ? 1.25 : 0.5) + scaling * (skill ? 1.5 : 0.5)) * multiplier * weaponMultiplier;
+    const raw = (attack * (skill ? 1.25 : 0.5) + scaling * (skill ? 1.5 : 0.5))
+      * multiplier
+      * weaponMultiplier
+      * (1 + Math.min(0.6, Number(exl.dmgPct || 0)));
     const curseBonus = session.linhCan === 'AM' && activeStatus(monster, 'curse') ? 1.08 : 1;
     const areaMultiplier = secondary ? BALANCE.damage.areaSecondaryMultiplier : 1;
     const attackBuff = 1 + buffPercent(buffs, 'buff_atk');
+    const cursePenalty = Math.min(0.6, debuffPercent(currentDebuffs(session), 'curse'));
     // Ngũ hành sinh khắc: linh căn người đánh vs linh căn quái, điều chỉnh theo chênh lệch cường độ (cùng công thức FE balance.js).
     const monsterElement = monster.linhCan || monster.element || (Array.isArray(monster.nguHanh) ? monster.nguHanh[0] : monster.nguHanh);
     const affinity = affinityProfile(session.linhCan, monsterElement, elementalStrength(session), elementalStrength(monster));
     const affinityMultiplier = Number.isFinite(affinity.multiplier) ? affinity.multiplier : 1;
-    let damage = Math.floor(mitigateDamage(raw * curseBonus * attackBuff * areaMultiplier * affinityMultiplier, defense));
-    const critChance = Number(derived.crit || 0) + buffPercent(buffs, 'buff_crit') + passive.critPct + affinityCritBonus(affinity);
-    const critical = Math.random() < Math.max(0, Math.min(0.5, critChance));
+    let damage = Math.floor(mitigateDamage(raw * curseBonus * attackBuff * (1 - cursePenalty) * areaMultiplier * affinityMultiplier, defense));
+    const critChance = Number(derived.crit || 0) + buffPercent(buffs, 'buff_crit') + passive.critPct + affinityCritBonus(affinity) + Number(exl.exlCritChance || 0);
+    const critical = Math.random() < Math.max(0, Math.min(0.6, critChance));
     if (critical) damage = Math.floor(damage * 1.5);
     return { damage: Math.max(1, damage), critical, affinityRelation: affinity.relation, affinityMultiplier };
   }
@@ -787,10 +1035,11 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
       const minimum = Math.max(1, Math.floor(Number(entry.min || 1)));
       const maximum = Math.max(minimum, Math.floor(Number(entry.max || minimum)));
       const count = crypto.randomInt(minimum, maximum + 1);
+      const traits = rollEquipmentDropTraits(definition, monster);
       const drop = runtime.addDrop(mapCode, {
         kind: 'item',
         itemCode: definition.id,
-        item: { ...definition, id: definition.id, itemCode: definition.id },
+        item: { ...definition, id: definition.id, itemCode: definition.id, ...traits },
         count,
         x: monster.x,
         y: monster.y,
@@ -802,9 +1051,29 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
     return drops;
   }
 
-  async function rewardKill(mapCode, monster, userId, socketId) {
+  async function rewardKill(mapCode, monster, userId, socketId, session = null) {
     io.to(roomName(mapCode)).emit('monster_death', { id: monster.id });
     const drops = spawnLoot(mapCode, monster);
+    if (session && Number(session.hp || 0) > 0) {
+      const exl = session.derivedStats?.exl || {};
+      const hpGain = Math.floor(Number(session.maxHp || 100) * Math.min(0.25, Number(exl.hpOnKillPct || 0)));
+      const mpGain = Math.floor(Number(session.maxMp || 50) * Math.min(0.25, Number(exl.mpOnKillPct || 0)));
+      if (hpGain > 0 || mpGain > 0) {
+        try {
+          const mutation = await store.updateVitals(
+            userId,
+            `kill_${crypto.randomUUID()}`,
+            'EXL_KILL_LEECH',
+            { hp: hpGain, mp: mpGain, maxHp: session.maxHp, maxMp: session.maxMp },
+          );
+          session.hp = Number(mutation.result.hp);
+          session.mp = Number(mutation.result.mp);
+          emitPlayerState(session);
+        } catch {
+          // Best-effort Exl kill leech; loot and quest progression remain authoritative.
+        }
+      }
+    }
     let questState = null;
     try {
       questState = await quests.applyEvent(userId, `evt_${crypto.randomUUID()}`, { type: 'monster_kill', monsterId: monster.templateId, mapCode, count: 1 });
@@ -859,7 +1128,12 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
       if (skill) {
         const mpCost = Math.max(0, Math.floor(Number(skill.mpTieuHao || 0)));
         try {
-          const mutation = await store.updateVitals(socket.auth.sub, requestId, 'REALTIME_SKILL_ATTACK', { mpCost });
+          const mutation = await store.updateVitals(
+            socket.auth.sub,
+            requestId,
+            'REALTIME_SKILL_ATTACK',
+            { mpCost, maxHp: session.maxHp, maxMp: session.maxMp },
+          );
           session.mp = Number(mutation.result.mp);
           session.hp = Number(mutation.result.hp);
           mp = session.mp;
@@ -892,6 +1166,9 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
         hits.push({ targetId: target.id, ...hit, hp: updated.hp, maxHp: updated.maxHp, dead: updated.dead, miss: false });
         if (updated.dead) killed.push(target);
       }
+      const attackEffect = String(skill?.effect || '').toLowerCase();
+      const cleansed = attackEffect === 'cleanse' ? cleanseSessionDebuffs(session) : null;
+      if (cleansed) emitPlayerState(session);
       const combatPayload = {
         attackerId: socket.id,
         targetId,
@@ -902,13 +1179,14 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
         cooldownMs,
         gcdMs: 350,
         hits,
+        ...(cleansed ? { cleansed, debuffs: {} } : {}),
       };
       io.to(roomName(mapCode)).emit('combat_result', combatPayload);
       io.to(roomName(mapCode)).emit('monster_update', { monsters: updates });
       const drops = [];
       let questState = null;
       for (const target of killed) {
-        const reward = await rewardKill(mapCode, target, socket.auth.sub, socket.id);
+        const reward = await rewardKill(mapCode, target, socket.auth.sub, socket.id, session);
         drops.push(...reward.drops);
         if (reward.questState) questState = reward.questState;
       }
@@ -935,6 +1213,8 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
       mpCost,
       hp: effect === 'heal' ? effectValue : 0,
       mp: effect === 'restore_mp' ? effectValue : 0,
+      maxHp: session.maxHp,
+      maxMp: session.maxMp,
     };
     return withMonsterLock(`cooldown:${socket.id}:${actionKey}`, async () => {
       const releaseCooldown = cooldown(session, actionKey, cooldownMs);
@@ -946,12 +1226,14 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
       const buffs = currentBuffs(session);
       const heal = Math.max(0, session.hp - before.hp);
       const mpRestore = Math.max(0, session.mp - (before.mp - mpCost));
+      const cleansed = effect === 'cleanse' ? cleanseSessionDebuffs(session) : null;
       if (effect.startsWith('buff_') || ['shield', 'buff_def', 'buff_atk', 'buff_crit', 'buff_spd', 'buff_cast', 'buff_hp_regen', 'buff_mp_regen', 'buff_vitals'].includes(effect)) {
         buffs[effect] = { value: effectValue, expiresAt: Date.now() + durationMs, durationSec: durationMs / 1000 };
         if (effect === 'shield') {
           buffs.shield.absorb = Math.max(1, Math.floor(Number(session.maxHp || 0) * effectValue / 100 * (1 + passive.shieldPct)));
         }
       }
+      if (cleansed) emitPlayerState(session);
       const result = {
         skillCode,
         skillName: skill.name,
@@ -965,6 +1247,8 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
         heal,
         mpRestore,
         buffs: { ...buffs },
+        debuffs: { ...currentDebuffs(session) },
+        ...(cleansed ? { cleansed } : {}),
         cooldownMs,
         gcdMs: 350,
       };
@@ -982,7 +1266,13 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
     const drop = runtime.getDrop(session.mapCode, dropId);
     if (!drop || drop.expiresAt <= Date.now()) throw new DomainError('LOOT_NOT_FOUND', 'Vật phẩm rơi không còn tồn tại', 404);
     if (Math.hypot(drop.x - session.x, drop.y - session.y) > PICKUP_RANGE) throw new DomainError('LOOT_OUT_OF_RANGE', 'Vật phẩm rơi nằm ngoài tầm nhặt', 409);
-    const mutation = await store.pickupGroundItem(socket.auth.sub, requestId, drop.id, drop.itemCode, drop.count);
+    const dropMeta = drop.item ? {
+      rarity: drop.item.rarity,
+      hasLuck: Boolean(drop.item.hasLuck),
+      exlOptions: Array.isArray(drop.item.exlOptions) ? drop.item.exlOptions : [],
+      enhanceLevel: Number(drop.item.enhanceLevel || 0),
+    } : {};
+    const mutation = await store.pickupGroundItem(socket.auth.sub, requestId, drop.id, drop.itemCode, drop.count, dropMeta);
     const player = players.decorate(mutation.player);
     if (!runtime.removeDrop(session.mapCode, drop.id)) throw new DomainError('LOOT_ALREADY_CLAIMED', 'Vật phẩm rơi đã được nhặt', 409);
     const item = { ...drop, item: { ...drop.item } };
@@ -1140,16 +1430,75 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
           const slots = Object.entries(player.equipment || {});
           const matches = (entry) => (typeof entry === "string" ? entry : entry?.itemCode || entry?.id) === id;
           if (!slots.some(([, entry]) => matches(entry))) continue;
-          player.equipment = Object.fromEntries(slots.map(([slot, entry]) => [slot, matches(entry) ? { ...item, id, itemCode: id } : entry]));
+          player.equipment = Object.fromEntries(slots.map(([slot, entry]) => [
+            slot,
+            matches(entry)
+              ? (item ? {
+                ...item,
+                id,
+                itemCode: id,
+                ...(entry && typeof entry === 'object' ? {
+                  instanceId: entry.instanceId,
+                  isInstance: entry.isInstance,
+                  rarity: entry.rarity || item.rarity,
+                  enhanceLevel: entry.enhanceLevel || 0,
+                  hasLuck: Boolean(entry.hasLuck ?? item.hasLuck),
+                  exlOptions: Array.isArray(entry.exlOptions) ? entry.exlOptions : [],
+                } : {}),
+              } : null)
+              : entry,
+          ]));
           player.derivedStats = deriveStats(player.stats || {}, player.equipment);
+          syncEffectiveVitals(player);
+          emitPlayerState(player);
         }
       }
       (io.local || io).emit("item_catalog_changed", { id, item });
     }
   }
 
-  cluster?.bind?.({ runtime, command: commandLocal, disconnect: disconnectLocal });
-  return { command, commandLocal, disconnect, disconnectLocal, runtime, stop, drain, catalogChanged, worldChanged, close: async () => { stop(); await drain(); } };
+  async function playerChangedLocal(userId) {
+    if (!userId) return false;
+    let updated = false;
+    for (const room of runtime.activeRooms()) {
+      for (const session of room.players.values()) {
+        if (String(session.userId) !== String(userId)) continue;
+        await syncPlayerState(session);
+        emitPlayerState(session);
+        const mods = resolveEquipmentModifiers(session.equipment || {});
+        io.to(roomName(session.mapCode)).emit('player_appearance_update', {
+          id: session.socketId,
+          glowTier: mods.glowTier || 0,
+          enhanceMaxLevel: mods.enhanceMaxLevel || 0,
+        });
+        updated = true;
+      }
+    }
+    return updated;
+  }
+
+  async function playerChanged(userId) {
+    if (!userId) return false;
+    if (cluster?.enabled) {
+      await cluster.notifyPlayerSync?.(userId);
+      return true;
+    }
+    return playerChangedLocal(userId);
+  }
+
+  function broadcastAnnouncement(payload) {
+    io.emit('server_announcement', { ...payload, at: Date.now() });
+  }
+
+  cluster?.bind?.({
+    runtime,
+    command: commandLocal,
+    commandLocal,
+    disconnect: disconnectLocal,
+    disconnectLocal,
+    playerChangedLocal,
+  });
+  return { command, commandLocal, disconnect, disconnectLocal, playerChangedLocal, playerChanged, broadcastAnnouncement, runtime, stop, drain, catalogChanged, worldChanged, close: async () => { stop(); await drain(); } };
 }
 
 module.exports = { createGameplayService };

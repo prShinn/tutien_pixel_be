@@ -2,10 +2,10 @@ const express = require('express');
 const asyncRoute = require('./async-route');
 const { createRateLimiter } = require('./rate-limit');
 
-function createAuthRouter(auth, config) {
+function createAuthRouter(auth, config, { rateLimitRedis = null } = {}) {
   const router = express.Router();
-  const credentialsLimit = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 12 });
-  const refreshLimit = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 30 });
+  const credentialsLimit = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 12, redis: rateLimitRedis, key: (request) => `auth_cred:${request.ip || 'unknown'}` });
+  const refreshLimit = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 30, redis: rateLimitRedis, key: (request) => `auth_refresh:${request.ip || 'unknown'}` });
 
   router.post('/register', credentialsLimit, asyncRoute(async (req, res) => res.status(201).json(await auth.register(req.body))));
   router.all('/register', (_req, res) => {

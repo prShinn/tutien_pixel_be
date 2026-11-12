@@ -4,6 +4,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const { Server } = require('socket.io');
+const Redis = require('ioredis');
 const config = require('./config');
 const { createMysqlStore } = require('./store/mysql-store');
 const { createAuth } = require('./auth');
@@ -24,11 +25,19 @@ const { createInventoryService } = require('./inventory/inventory-service');
 const { createCultivationService } = require('./cultivation/cultivation-service');
 const { createInventoryRouter } = require('./http/inventory-routes');
 const { createCultivationRouter } = require('./http/cultivation-routes');
+const { createAlchemyService } = require('./alchemy/alchemy-service');
+const { createAlchemyRouter } = require('./http/alchemy-routes');
 const { createEquipmentService } = require('./equipment/equipment-service');
+const { createEnhanceService } = require('./enhance/enhance-service');
+const { createEnhanceRouter } = require('./http/enhance-routes');
 const { createSkillService } = require('./skills/skill-service');
 const { createGameplayMutationRouter } = require('./http/gameplay-mutation-routes');
 const { createQuestService } = require('./quests/quest-service');
 const { createQuestRouter } = require('./http/quest-routes');
+const { createMailService } = require('./mail/mail-service');
+const { createMailRouter } = require('./http/mail-routes');
+const { createRetentionService } = require('./retention/retention-service');
+const { createRetentionRouter } = require('./http/retention-routes');
 const { createAdminWorldService } = require('./admin/admin-world-service');
 const { createAdminContentService } = require('./admin/admin-content-service');
 const { createSkillVfxService } = require('./admin/skill-vfx-service');
@@ -60,16 +69,25 @@ async function createApp() {
   catalog.applyAdminCollection('skills', mergeContentOverrides(catalog.getAdminCollection('skills'), skillOverrides, (skill) => skill.code || skill.id));
   for (const record of monsterOverrides) catalog.applyAdminRecord('monsters', record.id, record);
   for (const [skillCode, profile] of Object.entries(vfxProfiles)) catalog.setSkillVfxProfile(skillCode, profile);
+  store.bindCatalog?.({
+    get items() { return catalog.listItems(); },
+    get skills() { return catalog.listSkills(); },
+    get realms() { return catalog.listRealms(); },
+  });
+  await store.backfillLegacyEquipment?.();
   const world = createWorldService({ overrides: worldOverrides });
   const auth = createAuth({ store, secret: config.jwtSecret });
   const players = createPlayerService({ store, catalog, world });
   const inventory = createInventoryService({ store, catalog, players });
   const cultivation = createCultivationService({ store, catalog, players, inventory });
+  const alchemy = createAlchemyService({ store, catalog, players });
   const equipment = createEquipmentService({ store, catalog, players });
   const skills = createSkillService({ store, catalog, players });
   const quests = createQuestService({ store, catalog, world, initialOverrides: questOverrides });
   const skillVfx = createSkillVfxService({ store, catalog });
   const shop = createShopService({ store, catalog, players });
+  const mail = createMailService({ store, catalog, players });
+  const retention = createRetentionService({ store, catalog, players });
   const app = express();
   const server = http.createServer(app);
   const io = new Server(server, { cors: { origin: config.corsOrigin, credentials: true } });
@@ -77,6 +95,34 @@ async function createApp() {
   let realtimeAdapter;
   try { realtimeAdapter = await attachRedisAdapter(io, config.redisUrl); }
   catch (error) { await store.close(); throw error; }
+
+  let rateLimitRedis = null;
+  async function closeRateLimitRedis() {
+    if (!rateLimitRedis) return;
+    if (rateLimitRedis.status === 'ready') await rateLimitRedis.quit();
+    else rateLimitRedis.disconnect();
+  }
+  if (config.redisUrl) {
+    rateLimitRedis = new Redis(config.redisUrl, {
+      lazyConnect: true,
+      maxRetriesPerRequest: 1,
+      enableOfflineQueue: false,
+      connectionName: 'tu-tien-rate-limit',
+    });
+    let lastRateLimitRedisErrorAt = 0;
+    rateLimitRedis.on('error', () => {
+      const now = Date.now();
+      if (now - lastRateLimitRedisErrorAt < 30000) return;
+      lastRateLimitRedisErrorAt = now;
+      process.stderr.write(`${JSON.stringify({ level: 'error', event: 'rate_limit_redis_connection_error' })}\n`);
+    });
+    try {
+      await rateLimitRedis.connect();
+    } catch (error) {
+      await Promise.allSettled([closeRateLimitRedis(), realtimeAdapter.close(), store.close()]);
+      throw error;
+    }
+  }
 
   app.set('trust proxy', config.trustProxyHops);
   app.use(helmet());
@@ -124,21 +170,33 @@ async function createApp() {
     return res.send(metrics.render({ socketCount: io.engine.clientsCount }));
   });
 
-  app.use('/api/auth', createAuthRouter(auth, config));
-  app.use('/api', createAuthRouter(auth, config));
+  let gameplay = null;
+  const onPlayerChanged = (userId) => gameplay?.playerChanged?.(userId);
+  const enhance = createEnhanceService({
+    store,
+    catalog,
+    players,
+    onAnnouncement: (payload) => gameplay?.broadcastAnnouncement?.(payload),
+  });
+  app.use('/api/auth', createAuthRouter(auth, config, { rateLimitRedis }));
+  app.use('/api', createAuthRouter(auth, config, { rateLimitRedis }));
   app.use('/api', createCatalogRouter({ auth, catalog, players, world }));
-  app.use('/api', createShopRouter({ auth, shop }));
-  app.use('/api', createInventoryRouter({ auth, inventory }));
-  app.use('/api', createCultivationRouter({ auth, cultivation }));
-  app.use('/api', createGameplayMutationRouter({ auth, equipment, skills }));
+  app.use('/api', createShopRouter({ auth, shop, rateLimitRedis, onPlayerChanged }));
+  app.use('/api', createInventoryRouter({ auth, inventory, onPlayerChanged }));
+  app.use('/api', createCultivationRouter({ auth, cultivation, rateLimitRedis, onPlayerChanged }));
+  app.use('/api', createAlchemyRouter({ auth, alchemy, rateLimitRedis, onPlayerChanged }));
+  app.use('/api', createEnhanceRouter({ auth, enhance, rateLimitRedis, onPlayerChanged }));
+  app.use('/api', createGameplayMutationRouter({ auth, equipment, skills, onPlayerChanged }));
   app.use('/api', createQuestRouter({ auth, quests }));
+  app.use('/api', createMailRouter({ auth, mail, rateLimitRedis, onPlayerChanged }));
+  app.use('/api', createRetentionRouter({ auth, retention, rateLimitRedis, onPlayerChanged }));
   const roomCluster = createRoomCluster({ io, redisUrl: config.redisUrl, players, world });
-  const gameplay = createGameplayService({ io, auth, players, store, catalog, world, quests, cluster: roomCluster });
+  gameplay = createGameplayService({ io, auth, players, store, catalog, world, quests, cluster: roomCluster });
   try {
     await roomCluster.start();
   } catch (error) {
     gameplay.stop();
-    await Promise.allSettled([roomCluster.close(), realtimeAdapter.close(), store.close()]);
+    await Promise.allSettled([roomCluster.close(), closeRateLimitRedis(), realtimeAdapter.close(), store.close()]);
     throw error;
   }
   const adminContent = createAdminContentService({ store, catalog, world, quests, onCatalogChange(collection, id, saved) {
@@ -164,8 +222,8 @@ async function createApp() {
       gameplay.worldChanged(code);
     }).catch(() => process.stderr.write('{"level":"error","event":"world_peer_refresh_failed"}\n'));
   });
-  app.use('/api/admin', createAdminRouter({ auth, adminWorlds, adminContent, skillVfx }));
-  app.use('/api/player', createPlayerRouter({ auth, players }));
+  app.use('/api/admin', createAdminRouter({ auth, adminWorlds, adminContent, skillVfx, mail, rateLimitRedis }));
+  app.use('/api/player', createPlayerRouter({ auth, players, onPlayerChanged }));
   app.use('/api', (_req, res) => res.status(404).json({ ok: false, error: 'API không tồn tại', code: 'NOT_FOUND', message: 'API không tồn tại' }));
   app.use(errorHandler);
   attachGameGateway(io, { auth, gameplay });
@@ -182,6 +240,7 @@ async function createApp() {
       await new Promise((resolve) => io.close(resolve));
       await gameplay.drain();
       await roomCluster.close();
+      await closeRateLimitRedis();
       await realtimeAdapter.close();
       await store.close();
     },

@@ -100,14 +100,16 @@ Response excerpt sau commit (PlayerDTO đầy đủ còn có các alias compatib
 | GET | `/api/player/state` | Bearer | `PlayerDTO` |
 | GET | `/api/player/by-user/:userId` | Bearer, same owner | `PlayerDTO` |
 | GET | `/api/player/power` | Bearer | `{ combatPower }` |
+| GET | `/api/player/wallet/ledger` | Bearer; query `currency?` (`ALL`\|`XU`\|`LINH_THACH`), `limit?` (`1..50`), `cursor?` | `{ ok, wallet: { xu, linhThach }, items[], nextCursor }` |
 | POST | `/api/player` | `name`, optional `stats`, `gender`, `linhCan` | `PlayerDTO` and compatibility `{ player }` |
 | POST | `/api/player/respawn` | `requestId` | `{ ok, player, result }`; only a dead player can respawn |
 | PUT | `/api/player/:id` | `{ name }` only | `PlayerDTO`; owner required |
 | POST | `/api/player/stats/allocate` | `requestId`, `stat`, optional `amount` | `{ stats, unspentStatPoints, derivedStats, player }` |
 | GET | `/api/catalog/items` | - | `{ items }` (shop compatibility) |
-| POST | `/api/player/shop/buy` | `requestId`, `itemCode`, `quantity` | `{ ok, player, result }` |
-| POST | `/api/player/shop/sell` | `requestId`, `itemCode`, `quantity` | `{ ok, player, result }` |
-| POST | `/api/player/inventory/use` | `requestId`, `itemCode` | `{ player, result }` |
+| GET | `/api/shop/premium` | - | `{ ok, items[] }` (Kỳ Trân Các items priced in `LINH_THACH`) |
+| POST | `/api/player/shop/buy` | `requestId`, `itemCode`, `quantity` | `{ ok, player, result }` (`XU` or `LINH_THACH` per catalog `currency`; respects `player.inventoryCapacity`) |
+| POST | `/api/player/shop/sell` | `requestId`, `itemCode`, `quantity` | `{ ok, player, result }` (`ITEM_NOT_SELLABLE` 400 for `LINH_THACH` items) |
+| POST | `/api/player/inventory/use` | `requestId`, `itemCode` | `{ player, result }` (supports consumables plus `BAG_EXPAND`, `STAT_RESET`, `EXCHANGE_XU`) |
 | POST | `/api/player/cultivation/absorb` | `requestId`, `itemCode` | `{ player, result }` |
 | POST | `/api/player/cultivation/breakthrough` | `requestId` | `{ player, result }` |
 | POST | `/api/player/equipment/equip` | `requestId`, `itemCode`, `slot` | `{ player, result }` |
@@ -117,7 +119,7 @@ Response excerpt sau commit (PlayerDTO đầy đủ còn có các alias compatib
 
 Tạo nhân vật dùng user từ JWT. Server chỉ nhận tên, gender/root đã kiểm tra theo catalog và stats hợp lệ; map, spawn, cảnh giới, HP/MP, wallet, skills, equipment và inventory do server tạo. `PUT /api/player/:id` không mass-assign snapshot. `itemCode` nhận diện stack; không dùng chỉ số `index`.
 
-Hồi sinh dùng user từ JWT và `requestId` ổn định. Chỉ nhân vật có HP bằng 0 mới được hồi sinh; BE chọn điểm spawn của map mặc định, phục hồi HP/MP tối đa và commit vị trí/trạng thái trong một giao dịch có idempotency. Retry cùng request ID trả lại kết quả đã commit.
+Hồi sinh dùng user từ JWT và `requestId` ổn định. Chỉ nhân vật có HP bằng 0 mới được hồi sinh; BE chọn điểm spawn của map mặc định, phục hồi HP/MP tối đa, giữ nguyên tu vi (`tuViLost: 0`), khấu trừ lộ phí `20 xu × bậc cảnh giới` (tối đa `500 xu`, không âm ví; ví `0 xu` vẫn hồi sinh miễn phí, ghi `currency_ledger` reason `DEATH_PENALTY` khi `xuLost > 0`) và commit vị trí/trạng thái trong một giao dịch có idempotency. Retry cùng request ID trả lại kết quả đã commit.
 
 PlayerDTO duy trì alias `jsonIventory`, `trangBi`, `equip_slot` trong giai đoạn tích hợp. Inventory/equipment/skill/tu vi/stats mutation dùng transaction MySQL, khóa player row, action ledger và idempotency record.
 
@@ -131,6 +133,15 @@ PlayerDTO duy trì alias `jsonIventory`, `trangBi`, `equip_slot` trong giai đo�
 | POST | `/api/quests/:id/claim` | `{ requestId }` | snapshot + `rewards`, `grantedItems`, player summary |
 
 Quest state persist theo player. Reward xu, tu vi, item, trạng thái hoàn thành và idempotency key commit cùng transaction. Monster kill và item pickup tạo quest progress event; event update được gửi tới socket của người chơi gây ra event.
+
+## Mail & Retention
+
+| Method | Path | Request | Response |
+|---|---|---|---|
+| GET | `/api/mail` | Bearer; query `limit?` (`1..50`), `cursor?` | `{ ok, unclaimedCount, items[], nextCursor }` |
+| POST | `/api/mail/:id/claim` | Bearer, rate-limited (30/min); `{ requestId }` | `{ ok, player, result }` (credits `xu`, `linhThach`, `tuVi`, `grantedItems[]` atomically) |
+| GET | `/api/retention/status` | Bearer | `{ ok, serverTime, dateVn, checkin }` (UTC+7 server clock) |
+| POST | `/api/retention/checkin/claim` | Bearer, rate-limited (30/min); `{ requestId }` | `{ ok, player, result }` (7-day streak rolling cycle) |
 
 ## World and catalog reads
 
@@ -154,6 +165,7 @@ Catalog seed được sao chép trong `src/data`; item/skill overrides và world
 | PUT/DELETE | `/api/admin/content/:collection/:id` | GM/ADMIN Bearer | Persist override/tombstone và audit |
 | GET/POST | `/api/admin/skill-vfx` | GM/ADMIN Bearer | List profiles; create trả 201 và audit |
 | PUT/DELETE | `/api/admin/skill-vfx/:skillCode` | GM/ADMIN Bearer | Persist profile/delete và audit |
+| POST | `/api/admin/mail/send` | GM/ADMIN Bearer | `{ ok, mail, deduplicated }` (201; idempotent theo `(playerId, requestId)` và audit log) |
 
 Admin endpoints yêu cầu Bearer JWT có role `GM` hoặc `ADMIN`; `x-admin-key` và `ADMIN_API_KEY` không được chấp nhận. Mỗi ghi admin lưu audit record. Content item/skill được áp dụng vào catalog process hiện tại và nạp lại khi restart.
 

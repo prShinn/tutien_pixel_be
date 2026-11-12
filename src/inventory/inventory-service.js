@@ -29,6 +29,23 @@ function createInventoryService({ store, catalog, players }) {
       if (!Number.isSafeInteger(amount) || amount <= 0) throw new DomainError('INVALID_ITEM_EFFECT', 'Giá trị vật phẩm linh căn không hợp lệ', 409);
       return { kind: 'root_cultivation', amount, cap: BALANCE.progression.linhCan.itemCap };
     }
+    if (type === 'BAG_EXPAND') {
+      const slots = Math.floor(Number(item.bagSlots || 0));
+      if (!Number.isSafeInteger(slots) || slots < 1 || slots > 40) {
+        throw new DomainError('INVALID_ITEM_EFFECT', 'Giá trị mở rộng túi đồ không hợp lệ', 409);
+      }
+      return { kind: 'bag_expand', slots };
+    }
+    if (type === 'STAT_RESET') {
+      return { kind: 'stat_reset' };
+    }
+    if (type === 'EXCHANGE_XU') {
+      const xuAmount = Math.floor(Number(item.xuAmount || 0));
+      if (!Number.isSafeInteger(xuAmount) || xuAmount <= 0 || xuAmount > 1_000_000) {
+        throw new DomainError('INVALID_ITEM_EFFECT', 'Giá trị quy đổi Xu không hợp lệ', 409);
+      }
+      return { kind: 'exchange_xu', xuAmount };
+    }
     if (type === 'POTION' || type === 'CONSUME') {
       const healHp = Math.floor(Number(item.healHp || 0));
       const healMp = Math.floor(Number(item.healMp || 0));
