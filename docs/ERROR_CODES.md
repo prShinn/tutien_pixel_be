@@ -18,9 +18,12 @@ All REST errors are JSON `{ ok:false, error:string, code, details?, requestId? }
 - `INVALID_STAT`, `INVALID_AMOUNT`, `INSUFFICIENT_STAT_POINTS`: stat allocation input/balance failed.
 - `REALM_TOO_LOW`, `INVALID_EQUIPMENT_SLOT`, `ITEM_ALREADY_EQUIPPED`, `EQUIPMENT_NOT_FOUND`: equipment precondition failed.
 - `SKILL_NOT_FOUND`, `SKILL_ROOT_MISMATCH`, `SKILL_NOT_LEARNED`, `INVALID_SKILL_LOADOUT`, `PASSIVE_SKILL_NOT_EQUIPPABLE`: skill mutation failed.
+- `SKILL_AUTO_ASSIGNED` (409): kỹ năng COMMON không học/gán được; ô 1 tự gán theo loại vũ khí, combat chỉ chấp nhận đúng kỹ năng common đang được tự gán.
 - `QUEST_NOT_FOUND`, `QUEST_NOT_AVAILABLE`, `QUEST_NOT_ACTIVE`, `QUEST_NOT_READY`, `QUEST_REWARD_INVALID`: quest use case failed.
 - `WORLD_NOT_FOUND`, `WORLD_EXISTS`, `WORLD_INVALID`, `WORLD_CODE_IMMUTABLE`, `INVALID_PORTAL_POSITION`, `PORTAL_NOT_FOUND`: admin world edit failed.
 - `INVALID_CONTENT_COLLECTION`, `CONTENT_READ_ONLY`, `CONTENT_ID_REQUIRED`, `CONTENT_EXISTS`, `CONTENT_NOT_FOUND`, `CONTENT_ID_MISMATCH`: admin content operation failed.
+- `CONTENT_IN_USE` (409): không xóa được vật phẩm hoặc bảng rớt vì còn được quái, bảng rớt, công thức luyện đan hoặc nhiệm vụ tham chiếu; `details.usedBy` liệt kê tối đa 20 nơi đang dùng.
+- `INVALID_SKILL`, `INVALID_SKILL_EFFECT`, `INVALID_SKILL_PASSIVE`, `INVALID_MONSTER_LOOT_TABLE`: Admin lưu kỹ năng hoặc quái sai dữ liệu (hiệu ứng không hỗ trợ, modifier nội tại ngoài 0..1, sát thương > 50 lần, weaponKinds sai, bảng rớt không tồn tại).
 - `INVALID_VFX_PROFILE`, `SKILL_CODE_MISMATCH`, `SKILL_VFX_NOT_FOUND`: skill VFX edit failed.
 - `INVALID_COMMAND`, `INVALID_PAYLOAD`, `INVALID_POSITION`, `INVALID_MAP_CODE`, `INVALID_TARGET`, `INVALID_DROP_ID`, `INVALID_CHAT_MESSAGE`, `WORLD_NOT_JOINED`, `COMMAND_RATE_LIMITED`: socket command schema, world session or rate limit failed.
 - `WORLD_NO_WALKABLE_SPAWN`, `PORTAL_NOT_FOUND_OR_OUT_OF_RANGE`, `PORTAL_DESTINATION_BLOCKED`, `TARGET_NOT_FOUND`, `TARGET_OUT_OF_RANGE`, `COOLDOWN_ACTIVE`, `SKILL_NOT_EQUIPPED`, `SKILL_REQUIRES_TARGET`, `SKILL_REQUIRES_NO_TARGET`, `INSUFFICIENT_MP`, `LOOT_NOT_FOUND`, `LOOT_OUT_OF_RANGE`, `LOOT_ALREADY_CLAIMED`, `CHAT_RATE_LIMITED`: authoritative realtime gameplay precondition failed.

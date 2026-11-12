@@ -11,7 +11,9 @@ function createAdminRouter({ auth, adminWorlds, adminContent, skillVfx, mail, ra
     redis: rateLimitRedis,
     key: (request) => `admin_mail:${request.auth?.sub || request.ip}`,
   });
+  const largeWorldJson = express.json({ limit: '8mb' });
   router.use(authorize);
+  router.use('/worlds', largeWorldJson);
 
   router.get('/worlds', (_req, res) => res.json(adminWorlds.list()));
   router.post('/worlds', asyncRoute(async (req, res) => res.status(201).json(await adminWorlds.create(req.body, req.auth.sub, req))));

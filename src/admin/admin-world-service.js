@@ -4,7 +4,7 @@ const { isMonsterSpawnTile } = require('../world/world-service');
 
 function clone(value) { return structuredClone(value); }
 
-function validateWorld(world, allWorlds) {
+function validateWorld(world, allWorlds, { questIds = null } = {}) {
   const errors = [];
   const warnings = [];
   if (!/^[a-z0-9_]{2,64}$/i.test(String(world.code || ''))) errors.push('code phải dài 2-64 ký tự, chỉ gồm chữ, số và dấu gạch dưới');
@@ -35,6 +35,11 @@ function validateWorld(world, allWorlds) {
       errors.push(`portal ${portal.id || '(chưa có id)'} nằm ngoài bản đồ`);
     }
     if (Array.isArray(collision) && collision[Number(portal.y)]?.[Number(portal.x)] === 2) errors.push(`portal ${portal.id || ''} nằm trên ô bị chặn`);
+    if (portal.requiredQuestId != null && portal.requiredQuestId !== '') {
+      if (!/^[a-z0-9_-]{1,64}$/.test(String(portal.requiredQuestId))) errors.push(`portal ${portal.id || ''} có requiredQuestId không hợp lệ`);
+      else if (questIds && !questIds.has(String(portal.requiredQuestId))) errors.push(`portal ${portal.id || ''} yêu cầu nhiệm vụ không tồn tại: ${portal.requiredQuestId}`);
+    }
+    if (portal.lockedMessage != null && (typeof portal.lockedMessage !== 'string' || portal.lockedMessage.length > 200)) errors.push(`portal ${portal.id || ''} có lockedMessage không hợp lệ (tối đa 200 ký tự)`);
     const targetCode = portal.toMap || portal.denMap;
     const target = allWorlds.find((entry) => entry.code === targetCode);
     if (!targetCode || !target) warnings.push(`portal ${portal.id || ''} trỏ tới map chưa có trong catalog`);
@@ -49,6 +54,7 @@ function validateWorld(world, allWorlds) {
     if (!npc || typeof npc.id !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(npc.id)
         || !String(npc.name || '').trim() || !String(npc.role || '').trim()
         || !['dialog', 'shop', 'chest'].includes(npc.type)
+        || (npc.shopCategory != null && npc.shopCategory !== '' && !['ALL', 'EQUIPMENT', 'ALCHEMY'].includes(String(npc.shopCategory).toUpperCase()))
         || !Number.isInteger(npc.x) || !Number.isInteger(npc.y)
         || !isMonsterSpawnTile(world, npc.x, npc.y)
         || (npc.enabled != null && typeof npc.enabled !== 'boolean')) {
@@ -77,7 +83,8 @@ function validateWorld(world, allWorlds) {
   return { valid: errors.length === 0, errors, warnings };
 }
 
-function createAdminWorldService({ store, world, onWorldChange = () => {} }) {
+function createAdminWorldService({ store, world, quests = null, onWorldChange = () => {} }) {
+  const validateDoc = (document) => validateWorld(document, world.listAdminWorlds(), { questIds: quests?.list ? new Set(quests.list().map((quest) => quest.id)) : null });
   function notifyWorldChange(code, document) {
     try { onWorldChange(code, document); }
     catch { process.stderr.write('{"level":"error","event":"world_notification_failed"}\n'); }
@@ -91,7 +98,7 @@ function createAdminWorldService({ store, world, onWorldChange = () => {} }) {
 
   function get(code) {
     const document = findRaw(code);
-    return { ...document, validation: validateWorld(document, world.listAdminWorlds()) };
+    return { ...document, validation: validateDoc(document) };
   }
 
   async function persist(actorId, documents, action, req) {
@@ -108,7 +115,7 @@ function createAdminWorldService({ store, world, onWorldChange = () => {} }) {
     const code = String(input.code || '').trim().toLowerCase();
     if (world.listAdminWorlds().some((entry) => entry.code === code)) throw new DomainError('WORLD_EXISTS', 'Mã bản đồ đã tồn tại', 409);
     const document = { ...input, id: input.id || code, code, status: String(input.status || 'DRAFT').toUpperCase(), version: 1 };
-    const validation = validateWorld(document, world.listAdminWorlds());
+    const validation = validateDoc(document);
     if (!validation.valid) throw new DomainError('WORLD_INVALID', 'Bản đồ không hợp lệ', 400, validation);
     return (await persist(actorId, [document], 'WORLD_CREATE', req))[0];
   }
@@ -118,18 +125,18 @@ function createAdminWorldService({ store, world, onWorldChange = () => {} }) {
     const before = findRaw(code);
     if (input.code != null && String(input.code).toLowerCase() !== code) throw new DomainError('WORLD_CODE_IMMUTABLE', 'Không thể đổi code bản đồ qua endpoint cập nhật', 400);
     const document = { ...before, ...input, code, id: before.id || code, version: Number(before.version || 0) + 1 };
-    const validation = validateWorld(document, world.listAdminWorlds());
+    const validation = validateDoc(document);
     if (!validation.valid) throw new DomainError('WORLD_INVALID', 'Bản đồ không hợp lệ', 400, validation);
     return (await persist(actorId, [document], 'WORLD_UPDATE', req))[0];
   }
 
   function validate(code) {
-    return validateWorld(findRaw(code), world.listAdminWorlds());
+    return validateDoc(findRaw(code));
   }
 
   async function publish(code, actorId, req) {
     const document = findRaw(code);
-    const validation = validateWorld(document, world.listAdminWorlds());
+    const validation = validateDoc(document);
     if (!validation.valid) throw new DomainError('WORLD_INVALID', 'Không thể publish bản đồ chưa hợp lệ', 409, validation);
     const saved = (await persist(actorId, [{ ...document, status: 'PUBLISHED', version: Number(document.version || 0) + 1 }], 'WORLD_PUBLISH', req))[0];
     return { world: saved, validation };
@@ -156,17 +163,28 @@ function createAdminWorldService({ store, world, onWorldChange = () => {} }) {
     if (!point(input.sourceX, input.sourceY, source) || !point(input.targetX, input.targetY, target)) throw new DomainError('INVALID_PORTAL_POSITION', 'Tọa độ portal phải nằm trong bản đồ tương ứng');
     const id = String(input.id || `portal_${crypto.randomUUID()}`);
     const reverseId = input.twoWay ? `${id}_reverse` : null;
-    const sourcePortal = { id, x: input.sourceX, y: input.sourceY, toMap: target.code, denMap: target.code, toX: input.targetX, toY: input.targetY, tenMapDen: target.tenMap || target.name, reversePortalId: reverseId };
+    // Điều kiện khóa theo nhiệm vụ: giữ nguyên khi chỉ sửa tọa độ/đích; body có gửi khóa (kể cả rỗng) mới đổi hoặc gỡ.
+    const keepGate = (previous, overrides = null) => {
+      const gate = {};
+      for (const key of ['requiredQuestId', 'lockedMessage']) {
+        const value = overrides && Object.hasOwn(overrides, key) ? overrides[key] : previous?.[key];
+        if (typeof value === 'string' && value.trim()) gate[key] = value.trim();
+      }
+      return gate;
+    };
+    const sourcePortal = { id, x: input.sourceX, y: input.sourceY, toMap: target.code, denMap: target.code, toX: input.targetX, toY: input.targetY, tenMapDen: target.tenMap || target.name, reversePortalId: reverseId,
+      ...keepGate((source.portals || []).find((entry) => entry.id === id), input) };
     source.portals = [...(source.portals || []).filter((entry) => entry.id !== id), sourcePortal];
     const updates = [source];
     let reverse = null;
     if (input.twoWay) {
-      reverse = { id: reverseId, x: input.targetX, y: input.targetY, toMap: source.code, denMap: source.code, toX: input.sourceX, toY: input.sourceY, tenMapDen: source.tenMap || source.name, reversePortalId: id };
+      reverse = { id: reverseId, x: input.targetX, y: input.targetY, toMap: source.code, denMap: source.code, toX: input.sourceX, toY: input.sourceY, tenMapDen: source.tenMap || source.name, reversePortalId: id,
+        ...keepGate((target.portals || []).find((entry) => entry.id === reverseId)) };
       target.portals = [...(target.portals || []).filter((entry) => entry.id !== reverseId), reverse];
       updates.push(target);
     }
     for (const document of updates) {
-      const validation = validateWorld(document, world.listAdminWorlds());
+      const validation = validateDoc(document);
       if (!validation.valid) throw new DomainError('WORLD_INVALID', 'Portal làm bản đồ không hợp lệ', 409, validation);
     }
     const saved = await persist(actorId, updates, 'PORTAL_LINK', req);
@@ -192,7 +210,7 @@ function createAdminWorldService({ store, world, onWorldChange = () => {} }) {
   }
 
   return {
-    list: () => world.listAdminSummaries().map((entry) => ({ ...entry, validation: validateWorld(findRaw(entry.code), world.listAdminWorlds()) })), get, create, update, validate, publish, remove, linkPortal, deletePortal,
+    list: () => world.listAdminSummaries().map((entry) => ({ ...entry, validation: validateDoc(findRaw(entry.code)) })), get, create, update, validate, publish, remove, linkPortal, deletePortal,
   };
 }
 

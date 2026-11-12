@@ -172,7 +172,7 @@ Admin endpoints yêu cầu Bearer JWT có role `GM` hoặc `ADMIN`; `x-admin-key
 ### Admin request DTOs
 
 - `POST /api/admin/worlds`: JSON `WorldDTO` tối thiểu gồm `code`, `w`, `h`, `spawnX`, `spawnY`; có thể kèm `jsonMap`, `layers`, `portals`, `monsterSpawns`, `monsters`, `npcs`, `rules`. Code duy nhất; bản tạo mới mặc định `DRAFT`. `PUT /worlds/:code` nhận các field cần sửa, nhưng `code` bất biến. `POST /worlds/:code/publish` không cần body và chỉ publish khi validation không có lỗi.
-- `POST /api/admin/portals/link`: `{ sourceCode, targetCode, sourceX, sourceY, targetX, targetY, twoWay?, id? }`. Hai map phải khác nhau; tọa độ phải trong map. Response `{ source, reverse, sourceVersion, targetVersion }`.
+- `POST /api/admin/portals/link`: `{ sourceCode, targetCode, sourceX, sourceY, targetX, targetY, twoWay?, id?, requiredQuestId?, lockedMessage? }`. `requiredQuestId` (quest phải tồn tại) khóa portal tới khi quest ở trạng thái ready hoặc completed và thắng luật khóa mặc định; `lockedMessage` tối đa 200 ký tự; gửi chuỗi rỗng để gỡ, không gửi thì giữ giá trị cũ. Hai map phải khác nhau; tọa độ phải trong map. Response `{ source, reverse, sourceVersion, targetVersion }`.
 - `POST /api/admin/content/:collection`: JSON record có `id` hoặc `code`; collection ghi được là `quests`, `npcs`, `items`, `skills`. `PUT /:collection/:id` nhận record cập nhật và không cho đổi identity; `DELETE` tạo tombstone. `accounts` chỉ đọc.
 - `POST /api/admin/skill-vfx`: `{ skillCode, root, form, label, durationMs, colors:{ main, light, dark, accent } }`; thời lượng 50–30000 ms, màu hex `#RRGGBB`. `PUT /:skillCode` yêu cầu `skillCode` khớp path; `DELETE` xóa profile.
 

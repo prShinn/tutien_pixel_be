@@ -4,6 +4,7 @@ const { validateRequestId } = require('../inventory/inventory-service');
 const { BALANCE, deriveStats, resolveEquipmentModifiers, resolvePassiveModifiers, effectiveMaxVitals, mitigateDamage, affinityProfile, affinityCritBonus, elementalStrength } = require('../data/balance');
 const { createWorldRuntime } = require('./world-runtime');
 const { findMonsterRoute, clearMonsterSegment } = require('./monster-route');
+const { autoCommonSkillCode } = require('../skills/skill-loadout');
 
 const BASE_MOVEMENT_SPEED = 44;
 const PICKUP_RANGE = 22;
@@ -412,6 +413,8 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
       equipment: fresh.equipment,
       learnedSkills: fresh.learnedSkills,
       equippedSkills: fresh.equippedSkills,
+      autoSkill: fresh.autoSkill,
+      skills: fresh.skills,
       hp: fresh.hp,
       mp: fresh.mp,
       xu: fresh.xu,
@@ -516,13 +519,15 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
       : target.code === 'bach_van_son'
         ? { questId: 'novice-12-gate-boss', statuses: ['ready', 'completed'], message: 'Cửa ải chưa mở. Hãy đánh bại Trấn Quan Tân Thủ trước.' }
         : null;
-    const requiredQuestId = progressionGate?.questId || portal.requiredQuestId;
-    if (requiredQuestId) {
+    // Điều kiện do Admin cấu hình trên chính portal luôn thắng; luật cứng ở trên chỉ là mặc định cho hai map gốc.
+    const gate = portal.requiredQuestId
+      ? { questId: portal.requiredQuestId, statuses: ['ready', 'completed'], message: portal.lockedMessage }
+      : progressionGate;
+    if (gate?.questId) {
       const snapshot = await quests.snapshot(socket.auth.sub);
-      const requiredQuest = snapshot.quests.find((entry) => entry.id === requiredQuestId);
-      const allowedStatuses = progressionGate?.statuses || ['ready', 'completed'];
-      if (!requiredQuest || !allowedStatuses.includes(requiredQuest.status)) {
-        throw new DomainError('PORTAL_LOCKED', portal.lockedMessage || progressionGate?.message || 'Hoàn thành nhiệm vụ yêu cầu để mở cổng', 409);
+      const requiredQuest = snapshot.quests.find((entry) => entry.id === gate.questId);
+      if (!requiredQuest || !gate.statuses.includes(requiredQuest.status)) {
+        throw new DomainError('PORTAL_LOCKED', portal.lockedMessage || gate.message || 'Hoàn thành nhiệm vụ yêu cầu để mở cổng', 409);
       }
     }
     const destination = { x: Number(portal.toX), y: Number(portal.toY) };
@@ -807,7 +812,7 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
     return removed;
   }
 
-  function emitPlayerState(session) {
+  function emitPlayerState(session, { includeSkills = false } = {}) {
     const mods = resolveEquipmentModifiers(session.equipment || {});
     io.to(session.socketId).emit('player_state_update', {
       hp: session.hp,
@@ -818,6 +823,10 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
       debuffs: currentDebuffs(session),
       ...(session.stats !== undefined ? { stats: session.stats } : {}),
       ...(session.derivedStats !== undefined ? { derivedStats: session.derivedStats } : {}),
+      ...(includeSkills && Array.isArray(session.learnedSkills) ? { learnedSkills: session.learnedSkills } : {}),
+      ...(includeSkills && Array.isArray(session.equippedSkills) ? { equippedSkills: session.equippedSkills } : {}),
+      ...(includeSkills && session.autoSkill !== undefined ? { autoSkill: session.autoSkill } : {}),
+      ...(includeSkills && Array.isArray(session.skills) ? { skills: session.skills } : {}),
       glowTier: mods.glowTier || 0,
       enhanceMaxLevel: mods.enhanceMaxLevel || 0,
       ...(session.unspentStatPoints !== undefined ? { unspentStatPoints: session.unspentStatPoints } : {}),
@@ -943,9 +952,14 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
 
   function requirePlayerSkill(session, skillCode) {
     const skill = skillByCode(skillCode);
-    if (!(session.learnedSkills || []).includes(skillCode)) throw new DomainError('SKILL_NOT_LEARNED', 'Nhân vật chưa học kỹ năng này', 409);
-    if (!(session.equippedSkills || []).includes(skillCode)) throw new DomainError('SKILL_NOT_EQUIPPED', 'Kỹ năng chưa được trang bị', 409);
-    if (skill.linhCan !== 'COMMON' && skill.linhCan !== session.linhCan) throw new DomainError('SKILL_ROOT_MISMATCH', 'Kỹ năng không thuộc linh căn nhân vật', 403);
+    // Ô 1: kỹ năng common hệ thống tự gán theo vũ khí đang cầm, không cần học hay chọn.
+    const autoAssigned = skillCode === autoCommonSkillCode(session.equipment, catalog.listSkills());
+    if (!autoAssigned) {
+      if (skill.linhCan === 'COMMON') throw new DomainError('SKILL_AUTO_ASSIGNED', 'Kỹ năng common chỉ dùng qua ô tự gán theo vũ khí', 409);
+      if (skill.linhCan !== session.linhCan) throw new DomainError('SKILL_ROOT_MISMATCH', 'Kỹ năng không thuộc linh căn nhân vật', 403);
+      if (!(session.learnedSkills || []).includes(skillCode)) throw new DomainError('SKILL_NOT_LEARNED', 'Nhân vật chưa học kỹ năng này', 409);
+      if (!(session.equippedSkills || []).includes(skillCode)) throw new DomainError('SKILL_NOT_EQUIPPED', 'Kỹ năng chưa được trang bị', 409);
+    }
     if (Array.isArray(skill.weaponKinds) && skill.weaponKinds.length) {
       const weaponKind = session.equipment?.weapon?.weaponKind || session.equipment?.weapon?.basicAttack?.style;
       if (!weaponKind || !skill.weaponKinds.includes(weaponKind)) {
@@ -1464,7 +1478,7 @@ function createGameplayService({ io, auth, players, store, catalog, world, quest
       for (const session of room.players.values()) {
         if (String(session.userId) !== String(userId)) continue;
         await syncPlayerState(session);
-        emitPlayerState(session);
+        emitPlayerState(session, { includeSkills: true });
         const mods = resolveEquipmentModifiers(session.equipment || {});
         io.to(roomName(session.mapCode)).emit('player_appearance_update', {
           id: session.socketId,

@@ -57,17 +57,21 @@ async function createApp() {
   await store.init();
 
   const catalog = createCatalogService();
-  const [worldOverrides, itemOverrides, skillOverrides, monsterOverrides, questOverrides, vfxProfiles] = await Promise.all([
+  const [worldOverrides, itemOverrides, skillOverrides, monsterOverrides, questOverrides, alchemyRecipeOverrides, lootTableOverrides, vfxProfiles] = await Promise.all([
     store.listAdminWorlds(),
     store.listAdminContentRecords('items'),
     store.listAdminContentRecords('skills'),
     store.listAdminContentRecords('monsters'),
     store.listAdminContentRecords('quests'),
+    store.listAdminContentRecords('alchemyRecipes'),
+    store.listAdminContentRecords('lootTables'),
     store.listAdminSkillVfx(),
   ]);
   for (const record of itemOverrides) catalog.applyAdminRecord('items', record.id, record);
   catalog.applyAdminCollection('skills', mergeContentOverrides(catalog.getAdminCollection('skills'), skillOverrides, (skill) => skill.code || skill.id));
   for (const record of monsterOverrides) catalog.applyAdminRecord('monsters', record.id, record);
+  for (const record of alchemyRecipeOverrides) catalog.applyAdminRecord('alchemyRecipes', record.id, record);
+  for (const record of lootTableOverrides) catalog.applyAdminRecord('lootTables', record.id, record);
   for (const [skillCode, profile] of Object.entries(vfxProfiles)) catalog.setSkillVfxProfile(skillCode, profile);
   store.bindCatalog?.({
     get items() { return catalog.listItems(); },
@@ -144,8 +148,8 @@ async function createApp() {
     });
     next();
   });
-  app.use('/api/admin/worlds', express.json({ limit: '8mb' }));
-  app.use(express.json({ limit: '256kb' }));
+  const defaultJsonParser = express.json({ limit: '256kb' });
+  app.use((req, res, next) => (req.path.startsWith('/api/admin/worlds') ? next() : defaultJsonParser(req, res, next)));
   app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'tu-tien-pixel-be', time: new Date().toISOString() }));
   app.get('/api/health/ready', async (_req, res) => {
     let mysqlReady = false;
@@ -204,12 +208,18 @@ async function createApp() {
     if (realtimeAdapter.enabled) io.serverSideEmit("admin_catalog_committed", collection, id);
   } });
   if (realtimeAdapter.enabled) io.on("admin_catalog_committed", (collection, id) => {
-    if (!["items", "monsters"].includes(collection) || typeof id !== "string") return;
+    if (!["items", "monsters", "skills", "quests", "alchemyRecipes", "lootTables"].includes(collection) || typeof id !== "string") return;
+    if (collection === "quests") {
+      void store.listAdminContentRecords("quests").then((records) => {
+        quests.applyOverrides(records);
+      }).catch(() => process.stderr.write('{"level":"error","event":"catalog_peer_refresh_failed"}\n'));
+      return;
+    }
     void store.getAdminContentRecord(collection, id).then((saved) => {
       if (saved && catalog.applyAdminRecord(collection, id, saved)) gameplay.catalogChanged(collection, id, saved);
     }).catch(() => process.stderr.write('{"level":"error","event":"catalog_peer_refresh_failed"}\n'));
   });
-  const adminWorlds = createAdminWorldService({ store, world, onWorldChange(code) {
+  const adminWorlds = createAdminWorldService({ store, world, quests, onWorldChange(code) {
     gameplay.worldChanged(code);
     if (realtimeAdapter.enabled) io.serverSideEmit("admin_world_committed", code);
   } });

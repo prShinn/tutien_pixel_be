@@ -3,7 +3,7 @@ const { BALANCE } = require('../data/balance');
 const { QUEST_DEFINITIONS } = require('../quests/quest-catalog');
 const { validateQuestDefinition } = require('../quests/quest-service');
 
-const EDITABLE = new Set(['quests', 'items', 'skills', 'monsters']);
+const EDITABLE = new Set(['quests', 'items', 'skills', 'monsters', 'alchemyRecipes', 'lootTables']);
 const VALID_ITEM_TYPES = new Set(BALANCE.itemTaxonomy?.types || [
   'EQUIPMENT', 'ENHANCE_GEM', 'PROTECT_CHARM', 'POTION', 'CONSUME', 'STONE',
   'ELEMSTONE', 'LINDAN', 'BREAKTHROUGH_PILL', 'MATERIAL', 'MAT', 'BAG_EXPAND', 'STAT_RESET', 'EXCHANGE_XU',
@@ -11,6 +11,19 @@ const VALID_ITEM_TYPES = new Set(BALANCE.itemTaxonomy?.types || [
 const VALID_EQUIP_SLOTS = new Set(['weapon', 'armor', 'pants', 'boots', 'hat', 'gloves', 'ring', 'amulet', 'belt', 'gem']);
 const VALID_RARITIES = new Set(Object.keys(BALANCE.itemTaxonomy?.rarities || { NORMAL: 1, MAGIC: 1, EXL: 1, ANCIENT: 1 }));
 const VALID_SPARKLE_PRESETS = new Set(BALANCE.itemTaxonomy?.sparklePresets || ['NONE', 'DEWDROP', 'SHIMMER', 'MYTHIC_PRISM', 'ELEMENTAL']);
+// Hiệu ứng mà combat realtime thực sự xử lý (gameplay-service.js) cộng các hiệu ứng đang dùng trong dữ liệu gốc;
+// effect lạ sẽ âm thầm không có tác dụng nên Admin phải từ chối ngay lúc lưu.
+const VALID_SKILL_EFFECTS = new Set([
+  '', 'passive', 'heal', 'restore_mp', 'cleanse', 'shield',
+  'buff_atk', 'buff_def', 'buff_crit', 'buff_spd', 'buff_cast', 'buff_hp_regen', 'buff_mp_regen', 'buff_vitals',
+  'armor_break', 'burn', 'curse', 'freeze', 'root', 'slow', 'stun',
+]);
+// Mọi modifier nội tại là phân số cộng thẳng vào công thức (0.005 = 0.5%); giá trị > 1 (100%) gần như chắc chắn là nhập nhầm đơn vị.
+const VALID_PASSIVE_MODIFIERS = new Set([
+  'skillDamagePct', 'pDefPenPct', 'maxHpPct', 'hpRegenPct', 'maxMpPct', 'shieldPct',
+  'critPct', 'defensePct', 'speedPct', 'resistPct', 'cooldownPct', 'statusEffectPct',
+]);
+const MAX_SKILL_DAMAGE_MULTIPLIER = 50;
 const seed = require('../data/mock-data');
 const PAGED = { items: seed.items, monsters: seed.monsterDefs || [], skills: seed.skills };
 const READ_ONLY = new Set(['accounts', 'npcs']);
@@ -56,6 +69,11 @@ function parseMonster(input, catalog) {
         || png.readUInt32BE(20) !== size) {
       throw new DomainError('INVALID_MONSTER_IMAGE', 'Sprite phải là PNG vuông 32, 48 hoặc 64 px');
     }
+  }
+  const lootTableId = input.lootTableId;
+  if (lootTableId != null && lootTableId !== ''
+      && (typeof lootTableId !== 'string' || !(catalog.listLootTables?.() || []).some((table) => table.id === lootTableId))) {
+    throw new DomainError('INVALID_MONSTER_LOOT_TABLE', `Bảng rớt của quái không tồn tại: ${String(lootTableId).slice(0, 64)}`);
   }
   const color = /^#[0-9a-f]{6}$/i.test(input.color || '') ? input.color : root.color;
   return { ...input, id, code, name, img, type, linhCan, nguHanh: Array.isArray(input.nguHanh) ? input.nguHanh : [linhCan], color,
@@ -172,7 +190,7 @@ function parseItem(input, catalog) {
     const num = Number(val);
     return Number.isFinite(num) && num >= min && num <= max ? num : undefined;
   };
-  const weaponKind = strOpt(input.weaponKind, 32)?.toUpperCase();
+  const weaponKind = strOpt(input.weaponKind, 32)?.toLowerCase();
   const gemTier = strOpt(input.gemTier, 32)?.toUpperCase();
   const moTa = strOpt(input.moTa ?? input.mota ?? input.description, 400);
   const icon = strOpt(input.icon, 16);
@@ -232,6 +250,200 @@ function parseItem(input, catalog) {
     ...(nextQualityItemCode ? { nextQualityItemCode } : {}),
   };
 }
+
+function parseAlchemyRecipe(input, catalog) {
+  const code = String(input.code || input.id || '').trim();
+  if (!/^[A-Za-z0-9_-]{2,64}$/.test(code)) {
+    throw new DomainError('INVALID_ALCHEMY_RECIPE', 'Mã công thức luyện đan chỉ gồm chữ, số, _ hoặc - (2-64 ký tự)');
+  }
+  const name = String(input.name || '').trim();
+  if (!name || name.length > 80) {
+    throw new DomainError('INVALID_ALCHEMY_RECIPE', 'Tên công thức luyện đan dài 1-80 ký tự');
+  }
+  const category = String(input.category || 'BREAKTHROUGH').trim().toUpperCase();
+  if (!['BREAKTHROUGH', 'SUPPORT', 'CULTIVATION', 'BASIC', 'MID', 'HIGH', 'EXTREME'].includes(category)) {
+    throw new DomainError('INVALID_ALCHEMY_RECIPE', 'Phân loại công thức không hợp lệ');
+  }
+  const outputItemCode = String(input.outputItemCode || '').trim();
+  if (!outputItemCode || !catalog.getItemByCode(outputItemCode)) {
+    throw new DomainError('INVALID_ALCHEMY_RECIPE', `Vật phẩm đầu ra không tồn tại: ${outputItemCode || '(trống)'}`);
+  }
+  const upgradedItemCode = input.upgradedItemCode == null ? '' : String(input.upgradedItemCode).trim();
+  if (upgradedItemCode && !catalog.getItemByCode(upgradedItemCode)) {
+    throw new DomainError('INVALID_ALCHEMY_RECIPE', `Vật phẩm đột biến không tồn tại: ${upgradedItemCode}`);
+  }
+  const outputQuantity = input.outputQuantity == null ? 1 : Number(input.outputQuantity);
+  const craftSuccessRate = Number(input.craftSuccessRate);
+  const mutationChance = (input.mutationChance === undefined || input.mutationChance === null || input.mutationChance === '')
+    ? 0.05
+    : Number(input.mutationChance);
+  const requiredRealmStt = input.requiredRealmStt == null ? 1 : Number(input.requiredRealmStt);
+  const costXu = input.costXu == null ? 0 : Number(input.costXu);
+  const costLinhThach = input.costLinhThach == null ? 0 : Number(input.costLinhThach);
+  const maxRate = Number(BALANCE.alchemy?.maxCraftSuccessRate ?? 0.7);
+  if (!Number.isSafeInteger(outputQuantity) || outputQuantity < 1 || outputQuantity > 99
+      || !Number.isFinite(craftSuccessRate) || craftSuccessRate <= 0 || craftSuccessRate > maxRate
+      || !Number.isFinite(mutationChance) || mutationChance < 0 || mutationChance > 0.5
+      || !Number.isSafeInteger(requiredRealmStt) || requiredRealmStt < 1 || requiredRealmStt > 12
+      || !Number.isSafeInteger(costXu) || costXu < 0 || costXu > 100_000_000
+      || !Number.isSafeInteger(costLinhThach) || costLinhThach < 0 || costLinhThach > 100_000_000) {
+    throw new DomainError('INVALID_ALCHEMY_RECIPE', `Thông số tỷ lệ/chi phí luyện đan không hợp lệ (tỷ lệ thành công <= ${maxRate})`);
+  }
+  if (!Array.isArray(input.ingredients) || input.ingredients.length === 0 || input.ingredients.length > 10) {
+    throw new DomainError('INVALID_ALCHEMY_RECIPE', 'Công thức phải có 1 đến 10 nguyên liệu');
+  }
+  const seen = new Set();
+  const ingredients = input.ingredients.map((entry) => {
+    const itemCode = String(entry?.itemCode || '').trim();
+    const quantity = Number(entry?.quantity);
+    if (!itemCode || !catalog.getItemByCode(itemCode) || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 999) {
+      throw new DomainError('INVALID_ALCHEMY_RECIPE', `Nguyên liệu không hợp lệ: ${itemCode || '(trống)'}`);
+    }
+    if (seen.has(itemCode)) throw new DomainError('INVALID_ALCHEMY_RECIPE', `Trùng nguyên liệu: ${itemCode}`);
+    seen.add(itemCode);
+    return { itemCode, quantity };
+  });
+  const quality = input.quality ? String(input.quality).trim().toUpperCase() : undefined;
+  if (quality && !['HA_PHAM', 'TRUNG_PHAM', 'THUONG_PHAM', 'CUC_PHAM', 'HA', 'TRUNG', 'THUONG', 'CUC'].includes(quality)) {
+    throw new DomainError('INVALID_ALCHEMY_RECIPE', 'Phẩm chất đan không hợp lệ');
+  }
+  const pillGroup = typeof input.pillGroup === 'string' ? input.pillGroup.trim().slice(0, 64) : undefined;
+  const description = typeof input.description === 'string' ? input.description.trim().slice(0, 300) : '';
+  const qualityLabel = typeof input.qualityLabel === 'string' ? input.qualityLabel.trim().slice(0, 64) : undefined;
+  const qualityTier = input.qualityTier == null ? undefined : Number(input.qualityTier);
+  if (qualityTier !== undefined && (!Number.isSafeInteger(qualityTier) || qualityTier < 1 || qualityTier > 4)) {
+    throw new DomainError('INVALID_ALCHEMY_RECIPE', 'Bậc phẩm chất phải từ 1 đến 4');
+  }
+  return {
+    id: code,
+    code,
+    name,
+    category,
+    ...(pillGroup ? { pillGroup } : {}),
+    ...(quality ? { quality } : {}),
+    ...(qualityTier !== undefined ? { qualityTier } : {}),
+    ...(qualityLabel ? { qualityLabel } : {}),
+    ...(description ? { description } : {}),
+    outputItemCode,
+    ...(upgradedItemCode ? { upgradedItemCode } : {}),
+    outputQuantity,
+    craftSuccessRate,
+    mutationChance,
+    requiredRealmStt,
+    costXu,
+    costLinhThach,
+    ingredients,
+  };
+}
+
+// existing=true khi sửa bản ghi đã có: một mã kỹ năng gốc (CỬU_U_AM_GIOI) có dấu nên vẫn phải sửa được;
+// mã mới luôn chỉ gồm ASCII.
+function parseSkill(input, catalog, { existing = false } = {}) {
+  const code = String(input.code || input.id || '').trim();
+  if (!(existing ? /^[\p{L}\p{N}_-]{2,64}$/u : /^[A-Za-z0-9_-]{2,64}$/).test(code)) {
+    throw new DomainError('INVALID_SKILL', 'Mã kỹ năng chỉ gồm chữ, số, _ hoặc - (2-64 ký tự)');
+  }
+  const name = String(input.name || '').trim();
+  if (!name || name.length > 80) {
+    throw new DomainError('INVALID_SKILL', 'Tên kỹ năng dài 1-80 ký tự');
+  }
+  const linhCan = String(input.linhCan || 'COMMON').trim().toUpperCase();
+  if (linhCan !== 'COMMON' && !catalog.getRootByCode(linhCan)) {
+    throw new DomainError('INVALID_SKILL', `Linh căn không hợp lệ: ${linhCan}`);
+  }
+  const tier = input.tier == null ? 1 : Number(input.tier);
+  const type = String(input.type || 'COMMON').trim().toUpperCase();
+  const category = String(input.category || 'ACTIVE').trim().toUpperCase();
+  const mpTieuHao = input.mpTieuHao == null ? 0 : Number(input.mpTieuHao);
+  const hoiChieu = input.hoiChieu == null ? 1 : Number(input.hoiChieu);
+  const range = input.range == null ? 1 : Number(input.range);
+  const satThuong = input.satThuong == null ? 0 : Number(input.satThuong);
+  const dienRong = input.dienRong == null ? 0 : Number(input.dienRong);
+  const effectVal = input.effectVal == null ? 0 : Number(input.effectVal);
+  const thoiGianBuff = input.thoiGianBuff == null ? 0 : Number(input.thoiGianBuff);
+  if (!Number.isSafeInteger(tier) || tier < 1 || tier > 12
+      || !['COMMON', 'PHYS', 'MAGIC'].includes(type)
+      || !['ACTIVE', 'PASSIVE'].includes(category)
+      || !Number.isFinite(mpTieuHao) || mpTieuHao < 0 || mpTieuHao > 100000
+      || !Number.isFinite(hoiChieu) || hoiChieu < 0 || hoiChieu > 300
+      || !Number.isFinite(range) || range < 0 || range > 30
+      || !Number.isFinite(satThuong) || satThuong < 0 || satThuong > MAX_SKILL_DAMAGE_MULTIPLIER
+      || !Number.isFinite(dienRong) || dienRong < 0 || dienRong > 20
+      || !Number.isFinite(effectVal) || effectVal < -10000 || effectVal > 10000
+      || !Number.isFinite(thoiGianBuff) || thoiGianBuff < 0 || thoiGianBuff > 3600) {
+    throw new DomainError('INVALID_SKILL', 'Thông số kỹ năng vượt giới hạn cho phép');
+  }
+  const effect = input.effect == null ? undefined : String(input.effect).trim().toLowerCase();
+  if (effect !== undefined && !VALID_SKILL_EFFECTS.has(effect)) {
+    throw new DomainError('INVALID_SKILL_EFFECT', `Hiệu ứng kỹ năng không được hỗ trợ: ${effect}`);
+  }
+  let passiveModifiers;
+  if (input.passiveModifiers != null) {
+    if (typeof input.passiveModifiers !== 'object' || Array.isArray(input.passiveModifiers)) {
+      throw new DomainError('INVALID_SKILL', 'passiveModifiers phải là object');
+    }
+    passiveModifiers = {};
+    for (const [key, raw] of Object.entries(input.passiveModifiers)) {
+      const value = Number(raw);
+      if (!VALID_PASSIVE_MODIFIERS.has(key) || raw === null || raw === '' || !Number.isFinite(value) || value < 0 || value > 1) {
+        throw new DomainError('INVALID_SKILL_PASSIVE', `Modifier nội tại không hợp lệ: ${key} (chỉ nhận phân số 0..1)`);
+      }
+      passiveModifiers[key] = value;
+    }
+  }
+  let weaponKinds;
+  if (input.weaponKinds != null) {
+    if (!Array.isArray(input.weaponKinds) || input.weaponKinds.length > 6
+        || input.weaponKinds.some((kind) => typeof kind !== 'string' || !/^[a-z][a-z_]{1,31}$/i.test(kind.trim()))) {
+      throw new DomainError('INVALID_SKILL', 'weaponKinds phải là mảng tối đa 6 loại vũ khí hợp lệ');
+    }
+    weaponKinds = [...new Set(input.weaponKinds.map((kind) => kind.trim().toLowerCase()))];
+  }
+  return {
+    ...input,
+    code,
+    name,
+    linhCan,
+    tier,
+    type,
+    category,
+    mpTieuHao,
+    hoiChieu,
+    range,
+    satThuong,
+    dienRong,
+    effectVal,
+    thoiGianBuff,
+    ...(effect !== undefined ? { effect } : {}),
+    ...(passiveModifiers ? { passiveModifiers } : {}),
+    ...(weaponKinds ? { weaponKinds } : {}),
+  };
+}
+
+function parseLootTable(input, catalog) {
+  const id = String(input.id || '').trim();
+  if (!/^[A-Za-z0-9_-]{2,64}$/.test(id)) {
+    throw new DomainError('INVALID_LOOT_TABLE', 'Mã bảng rớt đồ chỉ gồm chữ, số, _ hoặc - (2-64 ký tự)');
+  }
+  if (!Array.isArray(input.entries) || input.entries.length > 50) {
+    throw new DomainError('INVALID_LOOT_TABLE', 'Danh sách vật phẩm rớt phải là mảng (tối đa 50 dòng)');
+  }
+  const entries = input.entries.map((entry) => {
+    const itemId = String(entry?.itemId || entry?.itemCode || '').trim();
+    const chance = Number(entry?.chance);
+    const min = entry?.min == null ? 1 : Number(entry.min);
+    const max = entry?.max == null ? min : Number(entry.max);
+    if (!itemId || !catalog.getItemByCode(itemId)) {
+      throw new DomainError('INVALID_LOOT_TABLE', `Vật phẩm trong bảng rớt không tồn tại: ${itemId || '(trống)'}`);
+    }
+    if (!Number.isFinite(chance) || chance <= 0 || chance > 1 || !Number.isSafeInteger(min) || !Number.isSafeInteger(max) || min < 1 || max < min || max > 99) {
+      throw new DomainError('INVALID_LOOT_TABLE', `Tỷ lệ hoặc số lượng rớt không hợp lệ cho ${itemId}`);
+    }
+    return { itemId, chance, min, max };
+  });
+  return { id, entries };
+}
+
 function createAdminContentService({ store, catalog, world, quests, onCatalogChange = () => {} }) {
   const writes = new Map();
   const isPaged = (collection) => Object.hasOwn(PAGED, collection);
@@ -246,25 +458,54 @@ function createAdminContentService({ store, catalog, world, quests, onCatalogCha
     };
   }
 
-  async function findRecord(collection, id) {
-    if (!isPaged(collection)) {
-      const data = (await list(collection)).data.find((entry) => recordId(collection, entry) === id);
-      return data ? { data } : null;
+  // Các bản ghi khác đang tham chiếu tới (collection, id); xóa khi còn tham chiếu sẽ làm quái hết rớt đồ,
+  // công thức luyện đan hỏng hoặc nhiệm vụ không hoàn thành được mà không có cảnh báo nào.
+  function contentReferences(collection, id) {
+    const refs = [];
+    const matches = (value) => value === id;
+    if (collection === 'lootTables') {
+      for (const monster of catalog.listMonsters?.() || []) if (matches(monster.lootTableId)) refs.push(`quái ${monster.id || monster.code}`);
     }
+    if (collection === 'items') {
+      for (const table of catalog.listLootTables?.() || []) {
+        if ((table.entries || []).some((entry) => matches(entry.itemId) || matches(entry.itemCode))) refs.push(`bảng rớt ${table.id}`);
+      }
+      for (const recipe of catalog.listAlchemyRecipes?.() || []) {
+        if (matches(recipe.outputItemCode) || matches(recipe.upgradedItemCode)
+            || (recipe.ingredients || []).some((entry) => matches(entry.itemCode))) refs.push(`công thức ${recipe.code || recipe.id}`);
+      }
+      for (const item of catalog.listItems?.() || []) {
+        if (item.id !== id && matches(item.nextQualityItemCode)) refs.push(`vật phẩm ${item.id}`);
+      }
+      for (const quest of quests.list?.() || []) {
+        if (matches(quest.targetItemId) || (quest.rewards || []).some((reward) => reward?.type === 'item' && matches(reward.itemId))) refs.push(`nhiệm vụ ${quest.id}`);
+      }
+    }
+    return refs;
+  }
+
+  async function findRecord(collection, id) {
     const stored = await store.getAdminContentRecord(collection, id);
     if (stored) return stored.deleted ? null : stored;
-    const data = PAGED[collection].find((entry) => recordId(collection, entry) === id);
+    const base = isPaged(collection) ? PAGED[collection] : baseRecords(collection);
+    const data = base.find((entry) => recordId(collection, entry) === id);
     return data ? { data, version: 0 } : null;
   }
 
   async function publishChange(collection, id, saved) {
-    if (collection !== 'items' && collection !== 'monsters') return refreshCatalog(collection);
+    if (collection === 'quests') {
+      await refreshCatalog(collection);
+      try { onCatalogChange(collection, id, saved); }
+      catch { process.stderr.write('{"level":"error","event":"catalog_notification_failed"}\n'); }
+      return;
+    }
+    if (!['items', 'skills', 'monsters', 'alchemyRecipes', 'lootTables'].includes(collection)) return refreshCatalog(collection);
     if (!catalog.applyAdminRecord(collection, id, saved)) return;
     try { onCatalogChange(collection, id, saved); }
     catch { process.stderr.write('{"level":"error","event":"catalog_notification_failed"}\n'); }
   }
   function baseRecords(collection) {
-    if (collection === 'items' || collection === 'skills') return catalog.getAdminCollection(collection);
+    if (['items', 'skills', 'alchemyRecipes', 'lootTables'].includes(collection)) return catalog.getAdminCollection(collection);
     if (collection === 'monsters') return catalog.listMonsters();
     if (collection === 'quests') return QUEST_DEFINITIONS.map((entry) => ({ ...entry }));
     if (collection === 'npcs') return world.listAdminWorlds().flatMap((entry) => entry.npcs || []);
@@ -274,19 +515,29 @@ function createAdminContentService({ store, catalog, world, quests, onCatalogCha
   async function list(collection, query = {}) {
     if (!EDITABLE.has(collection) && !READ_ONLY.has(collection)) throw new DomainError('INVALID_CONTENT_COLLECTION', 'Nhóm nội dung không hợp lệ', 404);
     if (collection === 'accounts') return { collection, demo: false, persisted: true, data: await store.listAdminAccounts() };
-    if (isPaged(collection) && ["page", "limit", "q", "ids"].some((key) => query[key] !== undefined)) {
+    if (isPaged(collection) && ["page", "limit", "q", "ids", "itemType", "rarity"].some((key) => query[key] !== undefined)) {
       const page = Number(query.page ?? 1);
       const limit = Number(query.limit ?? 24);
       const q = query.q ?? "";
       const ids = typeof query.ids === "string" ? query.ids.split(",") : [];
+      const itemType = query.itemType == null ? "" : String(query.itemType).trim().toUpperCase();
+      const rarity = query.rarity == null ? "" : String(query.rarity).trim().toUpperCase();
       if (!Number.isSafeInteger(page) || page < 1 || page > 100000 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100
           || typeof q !== "string" || q.length > 100 || (query.ids !== undefined && typeof query.ids !== "string")
-          || ids.length > 50 || ids.some((id) => !/^[A-Za-z0-9_-]{1,80}$/.test(id))) {
+          || ids.length > 50 || ids.some((id) => !/^[A-Za-z0-9_-]{1,80}$/.test(id))
+          || (query.itemType !== undefined && (typeof query.itemType !== "string" || (itemType && !VALID_ITEM_TYPES.has(itemType))))
+          || (query.rarity !== undefined && (typeof query.rarity !== "string" || (rarity && !VALID_RARITIES.has(rarity))))) {
         throw new DomainError("INVALID_CATALOG_PAGE", "Bộ lọc hoặc thông số phân trang không hợp lệ", 400);
       }
       const seeds = new Map(PAGED[collection].map((entry) => [recordId(collection, entry), entry]));
-      const searchRows = [...seeds].map(([id, entry]) => ({ id, name: entry.tenDo || entry.name || "", code: entry.maDo || entry.code || "" }));
-      const { total, rows } = await store.pageAdminCatalog(collection, searchRows, { q: q.trim(), ids, limit, offset: (page - 1) * limit });
+      const searchRows = [...seeds].map(([id, entry]) => ({
+        id,
+        name: entry.tenDo || entry.name || "",
+        code: entry.maDo || entry.code || "",
+        type: String(entry.type || entry.loai || "").toUpperCase(),
+        rarity: String(entry.rarity || "NORMAL").toUpperCase(),
+      }));
+      const { total, rows } = await store.pageAdminCatalog(collection, searchRows, { q: q.trim(), ids, itemType, rarity, limit, offset: (page - 1) * limit });
       return { collection, demo: false, persisted: true, data: rows.map((row) => row.data ?? seeds.get(row.id)), pagination: { page, limit, total } };
     }
     const records = baseRecords(collection);
@@ -303,6 +554,9 @@ function createAdminContentService({ store, catalog, world, quests, onCatalogCha
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new DomainError('INVALID_PAYLOAD', 'Nội dung không hợp lệ');
     if (collection === 'monsters') input = parseMonster(input, catalog);
     if (collection === 'items') input = parseItem(input, catalog);
+    if (collection === 'skills') input = parseSkill(input, catalog);
+    if (collection === 'alchemyRecipes') input = parseAlchemyRecipe(input, catalog);
+    if (collection === 'lootTables') input = parseLootTable(input, catalog);
     if (collection === 'quests') input = validateQuestDefinition(input, catalog.listItems(), world.listSummaries(), catalog.listMonsters());
     const id = recordId(collection, input);
     if (!id) throw new DomainError('CONTENT_ID_REQUIRED', 'Bản ghi cần có id hoặc code');
@@ -321,9 +575,20 @@ function createAdminContentService({ store, catalog, world, quests, onCatalogCha
     if (input.id != null && recordId(collection, input) !== id) throw new DomainError('CONTENT_ID_MISMATCH', 'id trong body không khớp đường dẫn', 400);
     const previous = found.data;
     if (collection === 'monsters') input = parseMonster({ ...previous, ...input, id, code: previous.code || id }, catalog);
-    if (collection === 'items') input = parseItem({ ...previous, ...input, id }, catalog);
+    if (collection === 'items') {
+      const nextType = input.type ?? input.loai;
+      const prevType = previous.type ?? previous.loai;
+      const typeChanged = nextType && prevType && String(nextType).toUpperCase() !== String(prevType).toUpperCase();
+      const base = typeChanged ? { id, maDo: id, ...(previous.img ? { img: previous.img } : {}) } : previous;
+      input = parseItem({ ...base, ...input, id }, catalog);
+    }
+    if (collection === 'skills') input = parseSkill({ ...previous, ...input, id, code: previous.code || id }, catalog, { existing: true });
+    if (collection === 'alchemyRecipes') input = parseAlchemyRecipe({ ...previous, ...input, id, code: previous.code || id }, catalog);
+    if (collection === 'lootTables') input = parseLootTable({ ...previous, ...input, id }, catalog);
     if (collection === 'quests') input = validateQuestDefinition({ ...previous, ...input, id }, catalog.listItems(), world.listSummaries(), catalog.listMonsters());
-    const document = { ...previous, ...input, id: previous.id || id };
+    const document = ['items', 'alchemyRecipes', 'lootTables'].includes(collection)
+      ? { ...input, id: previous.id || id }
+      : { ...previous, ...input, id: previous.id || id };
     const saved = await store.mutateAdminContent(actorId, collection, id, document, false, requestId, false, found.version);
     await publishChange(collection, id, saved);
     return { demo: false, persisted: true, data: saved.data };
@@ -333,6 +598,11 @@ function createAdminContentService({ store, catalog, world, quests, onCatalogCha
     if (!EDITABLE.has(collection) || collection === 'quests' || collection === 'monsters') throw new DomainError('CONTENT_READ_ONLY', 'Quest và quái được giữ để bảo vệ tiến độ và cấu hình map', 403);
     const found = await findRecord(collection, id);
     if (!found) throw new DomainError('CONTENT_NOT_FOUND', 'Bản ghi nội dung không tồn tại', 404);
+    const usedBy = contentReferences(collection, id);
+    if (usedBy.length) {
+      const shown = usedBy.slice(0, 5).join(', ');
+      throw new DomainError('CONTENT_IN_USE', `Không thể xóa ${id}: đang được dùng bởi ${shown}${usedBy.length > 5 ? ` và ${usedBy.length - 5} mục khác` : ''}`, 409, { usedBy: usedBy.slice(0, 20) });
+    }
     const saved = await store.mutateAdminContent(actorId, collection, id, null, true, requestId, false, found.version);
     await publishChange(collection, id, saved);
     return { demo: false, persisted: true, removed: id };

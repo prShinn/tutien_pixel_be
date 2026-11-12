@@ -281,17 +281,21 @@ function createMysqlStore(config) {
     return rows.map((row) => ({ id: row.recordId, data: decodeJson(row.documentJson), deleted: Boolean(row.isDeleted), version: row.version }));
   }
 
-  async function pageAdminCatalog(collection, seeds, { q, ids, limit, offset }) {
+  async function pageAdminCatalog(collection, seeds, { q, ids, itemType = '', rarity = '', limit, offset }) {
     const sql = [
-      "WITH seed AS (SELECT CONVERT(record_id USING utf8mb4) COLLATE utf8mb4_unicode_ci AS record_id, CONVERT(name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS name, CONVERT(code USING utf8mb4) COLLATE utf8mb4_unicode_ci AS code FROM JSON_TABLE(?, '$[*]' COLUMNS (record_id VARCHAR(96) PATH '$.id', name VARCHAR(512) PATH '$.name', code VARCHAR(96) PATH '$.code')) AS seed_rows),",
+      "WITH seed AS (SELECT CONVERT(record_id USING utf8mb4) COLLATE utf8mb4_unicode_ci AS record_id, CONVERT(name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS name, CONVERT(code USING utf8mb4) COLLATE utf8mb4_unicode_ci AS code, CONVERT(item_type USING utf8mb4) COLLATE utf8mb4_unicode_ci AS item_type, CONVERT(rarity USING utf8mb4) COLLATE utf8mb4_unicode_ci AS rarity FROM JSON_TABLE(?, '$[*]' COLUMNS (record_id VARCHAR(96) PATH '$.id', name VARCHAR(512) PATH '$.name', code VARCHAR(96) PATH '$.code', item_type VARCHAR(48) PATH '$.type', rarity VARCHAR(32) PATH '$.rarity')) AS seed_rows),",
       "effective AS (",
       " SELECT record_id, JSON_UNQUOTE(COALESCE(JSON_EXTRACT(document_json, '$.tenDo'), JSON_EXTRACT(document_json, '$.name'))) COLLATE utf8mb4_unicode_ci AS name,",
-      " JSON_UNQUOTE(COALESCE(JSON_EXTRACT(document_json, '$.maDo'), JSON_EXTRACT(document_json, '$.code'))) COLLATE utf8mb4_unicode_ci AS code, TRUE AS isOverride",
+      " JSON_UNQUOTE(COALESCE(JSON_EXTRACT(document_json, '$.maDo'), JSON_EXTRACT(document_json, '$.code'))) COLLATE utf8mb4_unicode_ci AS code,",
+      " UPPER(JSON_UNQUOTE(COALESCE(JSON_EXTRACT(document_json, '$.type'), JSON_EXTRACT(document_json, '$.loai'), ''))) COLLATE utf8mb4_unicode_ci AS item_type,",
+      " UPPER(JSON_UNQUOTE(COALESCE(JSON_EXTRACT(document_json, '$.rarity'), 'NORMAL'))) COLLATE utf8mb4_unicode_ci AS rarity, TRUE AS isOverride",
       " FROM admin_content_records WHERE collection_name = ? AND is_deleted = FALSE",
-      " UNION ALL SELECT seed.record_id, seed.name, seed.code, FALSE FROM seed",
+      " UNION ALL SELECT seed.record_id, seed.name, seed.code, UPPER(COALESCE(seed.item_type, '')), UPPER(COALESCE(seed.rarity, 'NORMAL')), FALSE FROM seed",
       " WHERE NOT EXISTS (SELECT 1 FROM admin_content_records r WHERE r.collection_name = ? AND r.record_id = seed.record_id)",
       "), filtered AS (SELECT record_id, isOverride FROM effective",
       " WHERE (? = '' OR LOCATE(LOWER(?), LOWER(CONCAT_WS(' ', record_id, name, code))) > 0)",
+      " AND (? = '' OR item_type = UPPER(?))",
+      " AND (? = '' OR rarity = UPPER(?))",
       " AND (? = 0 OR record_id IN (SELECT CONVERT(id USING utf8mb4) COLLATE utf8mb4_unicode_ci FROM JSON_TABLE(?, '$[*]' COLUMNS (id VARCHAR(96) PATH '$')) AS ids)",
       " OR code IN (SELECT CONVERT(id USING utf8mb4) COLLATE utf8mb4_unicode_ci FROM JSON_TABLE(?, '$[*]' COLUMNS (id VARCHAR(96) PATH '$')) AS codes))),",
       " paged AS (SELECT record_id, isOverride FROM filtered ORDER BY record_id LIMIT ? OFFSET ?)",
@@ -300,7 +304,9 @@ function createMysqlStore(config) {
       " ORDER BY paged.record_id",
     ].join("\n");
     const idsJson = JSON.stringify(ids);
-    const [rows] = await pool.execute(sql, [JSON.stringify(seeds), collection, collection, q, q, ids.length, idsJson, idsJson, limit, offset, collection]);
+    const limitInt = Math.max(1, Math.min(100, Number.parseInt(limit, 10) || 24));
+    const offsetInt = Math.max(0, Number.parseInt(offset, 10) || 0);
+    const [rows] = await pool.query(sql, [JSON.stringify(seeds), collection, collection, q, q, itemType, itemType, rarity, rarity, ids.length, idsJson, idsJson, limitInt, offsetInt, collection]);
     return { total: Number(rows[0]?.total || 0), rows: rows.filter((row) => row.id !== null).map((row) => ({
       id: row.id, data: row.documentJson == null ? null : decodeJson(row.documentJson),
     })) };
@@ -311,8 +317,12 @@ function createMysqlStore(config) {
     return row ? { data: decodeJson(row.documentJson), deleted: Boolean(row.isDeleted), version: row.version } : null;
   }
 
-  async function listAdminAccounts() {
-    const [rows] = await pool.query('SELECT id, username, role, status, created_at AS createdAt FROM users ORDER BY created_at DESC');
+  async function listAdminAccounts(limit = 200) {
+    const limitInt = Math.max(1, Math.min(500, Number.parseInt(limit, 10) || 200));
+    const [rows] = await pool.query(
+      'SELECT u.id, u.username, u.role, u.status, u.created_at AS createdAt, p.id AS playerId, p.name AS playerName, p.realm_code AS realmCode, p.realm_stage AS realmStage FROM users u LEFT JOIN players p ON p.user_id = u.id ORDER BY u.created_at DESC LIMIT ?',
+      [limitInt],
+    );
     return rows;
   }
 

@@ -1,5 +1,6 @@
 const seed = require('../data/mock-data');
 const { BALANCE, deriveStats, resolvePassiveModifiers, effectiveMaxVitals, describeEquipment, combatPower } = require('../data/balance');
+const { autoCommonSkillCode, rootLoadout } = require('../skills/skill-loadout');
 
 const clone = (value) => structuredClone(value);
 
@@ -33,8 +34,9 @@ const weaponProfiles = {
 };
 
 function weaponAttack(item) {
-  const kind = item.weaponKind || legacyWeaponKinds.get(item.id)
+  const raw = item.weaponKind || legacyWeaponKinds.get(item.id)
     || (legacyStaves.has(item.id) ? 'staff' : legacySwords.has(item.id) ? 'sword' : 'melee');
+  const kind = String(raw || 'melee').trim().toLowerCase();
   return clone(weaponProfiles[Object.hasOwn(weaponProfiles, kind) ? kind : 'melee']);
 }
 
@@ -43,6 +45,7 @@ function createCatalogService() {
   let skills = clone(seed.skills);
   let monsters = clone(seed.monsterDefs || []);
   let alchemyRecipes = clone(seed.alchemyRecipes || []);
+  const lootTables = new Map(Object.entries(clone(seed.lootTables || {})));
   for (const recipe of alchemyRecipes) {
     if (!(Number(recipe.craftSuccessRate) > 0 && Number(recipe.craftSuccessRate) <= BALANCE.alchemy.maxCraftSuccessRate)) {
       throw new Error(`Invalid craftSuccessRate on recipe ${recipe.code}: must be in (0, ${BALANCE.alchemy.maxCraftSuccessRate}]`);
@@ -76,22 +79,48 @@ function createCatalogService() {
     listSkills: () => clone(skills),
     listMonsters: () => clone(monsters),
     getMonsterRevision: () => monsterRevision,
-    getLootTableById: (id) => clone(seed.lootTables[id] || []),
+    getLootTableById: (id) => clone(lootTables.get(id) || []),
+    listLootTables: () => Array.from(lootTables.entries()).map(([id, entries]) => ({ id, entries: clone(entries) })),
     getBalance: () => clone(BALANCE),
     getSkillsForPlayer: async (playerService, userId) => {
       const player = await playerService.snapshot(userId);
-      return { skills: clone(skills), learnedSkills: player.learnedSkills || [], equippedSkills: player.equippedSkills || [], playerVersion: player.version };
+      return {
+        skills: clone(skills),
+        learnedSkills: player.learnedSkills || [],
+        equippedSkills: rootLoadout(player.equippedSkills, skills, player.linhCan || 'KIM'),
+        autoSkill: autoCommonSkillCode(player.equipment, skills),
+        playerVersion: player.version,
+      };
     },
     listSkillVfxProfiles: () => clone(skillVfxProfiles),
     setSkillVfxProfile: (skillCode, profile) => { skillVfxProfiles[skillCode] = clone(profile); },
     removeSkillVfxProfile: (skillCode) => { delete skillVfxProfiles[skillCode]; },
     replaceItems: (nextItems) => { items = clone(nextItems); },
     replaceSkills: (nextSkills) => { skills = clone(nextSkills); },
-    getAdminCollection: (collection) => collection === 'items' ? clone(items) : collection === 'skills' ? clone(skills) : collection === 'monsters' ? clone(monsters) : [],
+    getAdminCollection: (collection) => {
+      if (collection === 'items') return clone(items);
+      if (collection === 'skills') return clone(skills);
+      if (collection === 'monsters') return clone(monsters);
+      if (collection === 'alchemyRecipes') return clone(alchemyRecipes);
+      if (collection === 'lootTables') return Array.from(lootTables.entries()).map(([id, entries]) => ({ id, entries: clone(entries) }));
+      return [];
+    },
     applyAdminRecord(collection, id, { data, deleted, version }) {
       const key = collection + ":" + id;
       if (Number(version) <= (recordVersions.get(key) || 0)) return false;
-      const records = collection === "items" ? items : monsters;
+      if (collection === "lootTables") {
+        if (deleted) lootTables.delete(id);
+        else lootTables.set(id, clone((data && data.entries) || []));
+        recordVersions.set(key, Number(version));
+        return true;
+      }
+      const records = collection === "items"
+        ? items
+        : collection === "skills"
+          ? skills
+          : collection === "alchemyRecipes"
+            ? alchemyRecipes
+            : monsters;
       const index = records.findIndex((record) => String(record.id || record.code || record.maDo) === id);
       if (deleted) {
         if (index !== -1) records.splice(index, 1);
@@ -105,6 +134,13 @@ function createCatalogService() {
       if (collection === 'items') items = clone(records);
       if (collection === 'skills') skills = clone(records);
       if (collection === 'monsters') { monsters = clone(records); monsterRevision += 1; }
+      if (collection === 'alchemyRecipes') alchemyRecipes = clone(records);
+      if (collection === 'lootTables') {
+        lootTables.clear();
+        for (const row of records || []) {
+          if (row && row.id) lootTables.set(String(row.id), clone(row.entries || []));
+        }
+      }
     },
     decoratePlayer(player) {
       const inventory = (player.inventory || []).map((entry) => {
@@ -158,8 +194,14 @@ function createCatalogService() {
         return [slot, merged];
       }));
       const learnedSkills = player.learnedSkills || [];
-      const equippedSkills = player.equippedSkills || [];
-      const equippedSkillDefinitions = equippedSkills.map((code) => skills.find((skill) => skill.code === code)).filter(Boolean);
+      // Ô 2..5: chỉ kỹ năng chủ động đúng linh căn (dữ liệu cũ còn common/khác hệ bị lọc khi đọc).
+      const equippedSkills = rootLoadout(player.equippedSkills, skills, player.linhCan || 'KIM');
+      // Ô 1: kỹ năng common tự gán theo vũ khí; `skills` trả theo đúng thứ tự ô trên HUD.
+      const autoSkill = autoCommonSkillCode(equipment, skills);
+      const equippedSkillDefinitions = [autoSkill, ...equippedSkills]
+        .map((code) => skills.find((skill) => skill.code === code))
+        .filter(Boolean)
+        .map((skill, index) => (index === 0 && skill.code === autoSkill ? { ...skill, autoAssigned: true } : skill));
       const derivedStats = deriveStats(player.stats || {}, equipment);
       const passive = resolvePassiveModifiers(skills, learnedSkills, player.linhCan);
       const effectiveVitals = effectiveMaxVitals(player, derivedStats, passive);
@@ -195,6 +237,7 @@ function createCatalogService() {
         equip_slot: legacyEquipment,
         learnedSkills,
         equippedSkills,
+        autoSkill,
         skills: equippedSkillDefinitions,
         derivedStats,
         ...(hasVitalsContext ? {

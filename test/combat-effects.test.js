@@ -393,7 +393,7 @@ test('monster debuffs are resisted by passive resistPct and slow reduces movemen
 });
 
 test('cleanse clears player debuffs via both castSkill (THANH_TAM) and combatAttack (NHAT_DIEM)', async (t) => {
-  const thanhTam = { code: 'THANH_TAM', name: 'Thanh Tâm', linhCan: 'COMMON', satThuong: 0, effect: 'cleanse', effectVal: 1, thoiGianBuff: 0, mpTieuHao: 5, hoiChieu: 1 };
+  const thanhTam = { code: 'THANH_TAM', name: 'Thanh Tâm', linhCan: 'QUANG', satThuong: 0, effect: 'cleanse', effectVal: 1, thoiGianBuff: 0, mpTieuHao: 5, hoiChieu: 1 };
   const nhatDiem = { code: 'NHAT_DIEM', name: 'Nhất Diện Quang', linhCan: 'QUANG', satThuong: 1.4, range: 6, effect: 'cleanse', effectVal: 1, thoiGianBuff: 0, mpTieuHao: 5, hoiChieu: 1 };
 
   const { harness, socket } = await startFight(t, {

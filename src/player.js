@@ -37,12 +37,12 @@ function createPlayerService({ store, catalog, world }) {
     const stats = normalizeCreationStats(input.stats);
     const allSkills = catalog.listSkills();
     const rootSkills = allSkills.filter((skill) => skill.linhCan === root.id && String(skill.category || 'ACTIVE').toUpperCase() !== 'PASSIVE');
+    // Kỹ năng common không cần học: ô 1 được hệ thống tự gán theo vũ khí (skill-loadout.js).
     const initialLearnedSkills = [
-      ...allSkills.filter((skill) => skill.linhCan === 'COMMON'),
       ...rootSkills.slice(0, 2),
       ...allSkills.filter((skill) => skill.linhCan === root.id && String(skill.category || '').toUpperCase() === 'PASSIVE'),
     ].map((skill) => skill.code);
-    // Chỉ trang bị kỹ năng chủ động đã học (2 kỹ năng đầu của linh căn); ô 3-4 mở khi học thêm.
+    // Ô 2..5 nhận kỹ năng linh căn đã học; khởi đầu trang bị 2 kỹ năng đầu, các ô còn lại mở khi học thêm.
     const initialEquippedSkills = rootSkills.slice(0, 2).map((skill) => skill.code);
     const created = await store.createPlayer(userId, {
       id: `plr_${crypto.randomUUID()}`,
