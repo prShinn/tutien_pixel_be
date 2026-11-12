@@ -1427,7 +1427,7 @@ function createMysqlStore(config) {
   async function learnSkill(userId, requestId, skillCode, expectedRealmCode, expectedRoot, playerRealmStt, requiredRealmStt) {
     const intent = { operation: 'LEARN_SKILL', skillCode };
     return playerMutation(userId, requestId, intent, async (connection, player) => {
-      assertPlayerAlive(player, 'trang bị vật phẩm');
+      assertPlayerAlive(player, 'lĩnh hội kỹ năng');
       if (player.realmCode !== expectedRealmCode) throw new DomainError('PLAYER_STATE_CHANGED', 'Nhân vật đã thay đổi trạng thái, hãy tải lại rồi thử lại', 409);
       const [realmRows] = await connection.execute('SELECT realm_code AS realmCode, realm_stage AS realmStage FROM players WHERE id = ? LIMIT 1', [player.id]);
       if (realmRows[0]?.realmCode !== expectedRealmCode) throw new DomainError('PLAYER_STATE_CHANGED', 'Nhân vật đã thay đổi trạng thái, hãy tải lại rồi thử lại', 409);
@@ -1442,6 +1442,7 @@ function createMysqlStore(config) {
   async function equipSkills(userId, requestId, skillCodes) {
     const intent = { operation: 'EQUIP_SKILLS', skillCodes };
     return playerMutation(userId, requestId, intent, async (connection, player) => {
+      assertPlayerAlive(player, 'trang bị kỹ năng');
       const [learnedRows] = await connection.execute('SELECT skill_code AS skillCode FROM player_skills WHERE player_id = ? FOR UPDATE', [player.id]);
       const learned = new Set(learnedRows.map((row) => row.skillCode));
       if (skillCodes.some((code) => !learned.has(code))) throw new DomainError('SKILL_NOT_LEARNED', 'Chỉ được trang bị kỹ năng đã học', 409);
@@ -1477,7 +1478,7 @@ function createMysqlStore(config) {
           await connection.commit();
           return { ...replay, replayed: true };
         }
-        if (!(Number(player.hp) > 0)) throw new DomainError('PLAYER_DEAD', 'Nhân vật đã tử vong, hãy hồi sinh trước khi đột phá', 409);
+        assertPlayerAlive(player, 'đột phá');
         if (player.realmCode !== progression.realm.code || player.realmStage !== progression.stage) {
           throw new DomainError('PLAYER_STATE_CHANGED', 'Nhân vật đã thay đổi trạng thái, hãy tải lại rồi thử lại', 409);
         }
@@ -1709,9 +1710,7 @@ function createMysqlStore(config) {
           await connection.commit();
           return { ...replay, replayed: true };
         }
-        if (!(Number(player.hp) > 0)) {
-          throw new DomainError('PLAYER_DEAD', 'Nhân vật đã tử vong, hãy hồi sinh trước khi luyện đan', 409);
-        }
+        assertPlayerAlive(player, 'luyện đan');
 
         const realmsList = brewInput.realmCatalog || activeRealms();
         const playerRealmStt = Number(realmsList.find((entry) => entry.code === player.realmCode)?.stt || 1);
@@ -1941,6 +1940,7 @@ function createMysqlStore(config) {
           await connection.commit();
           return { ...replay, replayed: true };
         }
+        assertPlayerAlive(player, 'cường hóa trang bị');
         const [[wallet]] = await connection.query('SELECT xu, linh_thach AS linhThach FROM wallets WHERE player_id = ? FOR UPDATE', [player.id]);
         if (!wallet) throw new DomainError('WALLET_NOT_FOUND', 'Không tìm thấy ví nhân vật', 404);
 

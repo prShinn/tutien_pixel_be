@@ -478,3 +478,89 @@ test('Phase 4 regressions: stackable inv items omit instanceId, sell uses scaled
     assert.ok(BALANCE.exlOptions[opt.code].slots.includes('boots'));
   }
 });
+
+test('createMysqlStore rejects dead players (hp <= 0) across shop, item use, stats, gear, skills, and enhance', async (t) => {
+  const mysql = require('mysql2/promise');
+  const origCreatePool = mysql.createPool;
+  let rollbacks = 0;
+  let mutatingQueries = 0;
+  const cachedReplay = JSON.stringify({
+    __idempotency: { operation: 'BUY_ITEM', itemCode: 'POTION_TIEU_HOAN', count: 1 },
+    player: { id: 'p_dead', userId: 'u_dead', hp: 100 },
+  });
+  const fakeConnection = {
+    async beginTransaction() {},
+    async commit() {},
+    async rollback() { rollbacks += 1; },
+    release() {},
+    async query(sql, params = []) {
+      const upper = String(sql).trim().toUpperCase();
+      if (/^(INSERT|UPDATE|DELETE)\b/.test(upper)) mutatingQueries += 1;
+      if (sql.includes('FROM idempotency_keys')) {
+        return [params[1] === 'req_dead_replay' ? [{ resultJson: cachedReplay }] : []];
+      }
+      if (sql.includes('FROM players WHERE user_id')) {
+        return [[{
+          id: 'p_dead',
+          userId: 'u_dead',
+          gender: 'NAM',
+          linhCan: 'HOA',
+          realmCode: 'LUYEN_THE',
+          realmStage: 1,
+          tuVi: 0,
+          tuViLinhCan: 0,
+          hp: 0,
+          maxHp: 160,
+          mp: 0,
+          maxMp: 90,
+          str: 5,
+          agi: 5,
+          vit: 5,
+          ene: 5,
+          unspentPoints: 5,
+          inventoryCapacity: 40,
+        }]];
+      }
+      return [[]];
+    },
+    async execute(sql, params) {
+      return this.query(sql, params);
+    },
+  };
+  mysql.createPool = () => ({
+    pool: null,
+    async getConnection() { return fakeConnection; },
+    async query() { return [[]]; },
+    async execute() { return [[]]; },
+    async end() {},
+  });
+  t.after(() => { mysql.createPool = origCreatePool; });
+
+  const { createMysqlStore } = require('../src/store/mysql-store');
+  const store = createMysqlStore({ host: '127.0.0.1', user: 'u', password: 'p', database: 'd' });
+  const deadGuard = (err) => err instanceof DomainError && err.code === 'PLAYER_DEAD' && err.status === 409;
+
+  await assert.rejects(() => store.buyItem('u_dead', 'req_dead_buy_1', 'POTION_TIEU_HOAN', 1, { currency: 'XU', price: 10 }), deadGuard);
+  await assert.rejects(() => store.sellItem('u_dead', 'req_dead_sell_1', 'POTION_TIEU_HOAN', 1, { sellPrice: 5 }), deadGuard);
+  await assert.rejects(() => store.useInventoryItem('u_dead', 'req_dead_use_1', 'POTION_TIEU_HOAN', 'USE_ITEM', { kind: 'potion', healHp: 50, healMp: 0 }), deadGuard);
+  await assert.rejects(() => store.allocateStats('u_dead', 'req_dead_stat_1', 'str', 1), deadGuard);
+  await assert.rejects(() => store.equipItem('u_dead', 'req_dead_eq_1', 'WEAPON_KIEM_GO', 'weapon', 'LUYEN_THE', 1, 1), deadGuard);
+  await assert.rejects(() => store.unequipItem('u_dead', 'req_dead_uneq_1', 'weapon'), deadGuard);
+  await assert.rejects(() => store.learnSkill('u_dead', 'req_dead_sk_1', 'HOA_CAU', 'LUYEN_THE', 'HOA', 1, 1), deadGuard);
+  await assert.rejects(() => store.equipSkills('u_dead', 'req_dead_eqsk_1', ['HOA_CAU']), deadGuard);
+  await assert.rejects(
+    () => store.enhanceEquipment('u_dead', 'req_dead_enh_1', {
+      instanceId: '11111111-1111-4111-8111-111111111111',
+      useProtection: false,
+      planAttempt: () => ({}),
+      decideOutcome: () => ({}),
+    }),
+    deadGuard,
+  );
+  assert.equal(rollbacks, 9);
+  assert.equal(mutatingQueries, 0);
+
+  // Idempotent replay after later player death still returns the original committed result
+  const replayed = await store.buyItem('u_dead', 'req_dead_replay', 'POTION_TIEU_HOAN', 1, { currency: 'XU', price: 10 });
+  assert.equal(replayed.id, 'p_dead');
+});
