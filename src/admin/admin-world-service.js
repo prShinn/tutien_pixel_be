@@ -210,7 +210,7 @@ function createAdminWorldService({ store, world, quests = null, onWorldChange = 
   }
 
   return {
-    list: () => world.listAdminSummaries().map((entry) => ({ ...entry, validation: validateDoc(findRaw(entry.code)) })), get, create, update, validate, publish, remove, linkPortal, deletePortal,
+    list: () => world.listAdminSummaries(), get, create, update, validate, publish, remove, linkPortal, deletePortal,
   };
 }
 

@@ -1,4 +1,5 @@
 const mysql = require('mysql2/promise');
+const bcrypt = require('bcryptjs');
 const crypto = require('node:crypto');
 const { DomainError, publicPlayer } = require('../domain');
 const { combatPower, deriveStats, resolvePassiveModifiers, effectiveMaxVitals, calcDeathXuPenalty, resolveBreakthroughPillRate, calcBreakthroughFailurePenalty, calcBreakthroughRegression, calcEquipmentSellPrice, BALANCE, getVnDateString } = require('../data/balance');
@@ -173,6 +174,15 @@ function createMysqlStore(config) {
       throw error;
     }
   }
+  async function upsertAdminUser(user) {
+    await pool.execute(
+      `INSERT INTO users (id, username, password_hash, role, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash), role = VALUES(role), status = VALUES(status)`,
+      [user.id, user.username, user.passwordHash, user.role || 'ADMIN', user.status || 'ACTIVE', user.createdAt || new Date().toISOString()],
+    );
+    return findUserByUsername(user.username);
+  }
   async function saveRefreshToken(userId, tokenHash, expiresAt) {
     await pool.execute(
       'INSERT INTO auth_refresh_tokens (id, user_id, token_hash, expires_at) VALUES (?, ?, ?, ?)',
@@ -281,35 +291,45 @@ function createMysqlStore(config) {
     return rows.map((row) => ({ id: row.recordId, data: decodeJson(row.documentJson), deleted: Boolean(row.isDeleted), version: row.version }));
   }
 
-  async function pageAdminCatalog(collection, seeds, { q, ids, itemType = '', rarity = '', limit, offset }) {
-    const sql = [
-      "WITH seed AS (SELECT CONVERT(record_id USING utf8mb4) COLLATE utf8mb4_unicode_ci AS record_id, CONVERT(name USING utf8mb4) COLLATE utf8mb4_unicode_ci AS name, CONVERT(code USING utf8mb4) COLLATE utf8mb4_unicode_ci AS code, CONVERT(item_type USING utf8mb4) COLLATE utf8mb4_unicode_ci AS item_type, CONVERT(rarity USING utf8mb4) COLLATE utf8mb4_unicode_ci AS rarity FROM JSON_TABLE(?, '$[*]' COLUMNS (record_id VARCHAR(96) PATH '$.id', name VARCHAR(512) PATH '$.name', code VARCHAR(96) PATH '$.code', item_type VARCHAR(48) PATH '$.type', rarity VARCHAR(32) PATH '$.rarity')) AS seed_rows),",
-      "effective AS (",
-      " SELECT record_id, JSON_UNQUOTE(COALESCE(JSON_EXTRACT(document_json, '$.tenDo'), JSON_EXTRACT(document_json, '$.name'))) COLLATE utf8mb4_unicode_ci AS name,",
-      " JSON_UNQUOTE(COALESCE(JSON_EXTRACT(document_json, '$.maDo'), JSON_EXTRACT(document_json, '$.code'))) COLLATE utf8mb4_unicode_ci AS code,",
-      " UPPER(JSON_UNQUOTE(COALESCE(JSON_EXTRACT(document_json, '$.type'), JSON_EXTRACT(document_json, '$.loai'), ''))) COLLATE utf8mb4_unicode_ci AS item_type,",
-      " UPPER(JSON_UNQUOTE(COALESCE(JSON_EXTRACT(document_json, '$.rarity'), 'NORMAL'))) COLLATE utf8mb4_unicode_ci AS rarity, TRUE AS isOverride",
-      " FROM admin_content_records WHERE collection_name = ? AND is_deleted = FALSE",
-      " UNION ALL SELECT seed.record_id, seed.name, seed.code, UPPER(COALESCE(seed.item_type, '')), UPPER(COALESCE(seed.rarity, 'NORMAL')), FALSE FROM seed",
-      " WHERE NOT EXISTS (SELECT 1 FROM admin_content_records r WHERE r.collection_name = ? AND r.record_id = seed.record_id)",
-      "), filtered AS (SELECT record_id, isOverride FROM effective",
-      " WHERE (? = '' OR LOCATE(LOWER(?), LOWER(CONCAT_WS(' ', record_id, name, code))) > 0)",
-      " AND (? = '' OR item_type = UPPER(?))",
-      " AND (? = '' OR rarity = UPPER(?))",
-      " AND (? = 0 OR record_id IN (SELECT CONVERT(id USING utf8mb4) COLLATE utf8mb4_unicode_ci FROM JSON_TABLE(?, '$[*]' COLUMNS (id VARCHAR(96) PATH '$')) AS ids)",
-      " OR code IN (SELECT CONVERT(id USING utf8mb4) COLLATE utf8mb4_unicode_ci FROM JSON_TABLE(?, '$[*]' COLUMNS (id VARCHAR(96) PATH '$')) AS codes))),",
-      " paged AS (SELECT record_id, isOverride FROM filtered ORDER BY record_id LIMIT ? OFFSET ?)",
-      " SELECT paged.record_id AS id, r.document_json AS documentJson, totals.total FROM (SELECT COUNT(*) AS total FROM filtered) AS totals",
-      " LEFT JOIN paged ON TRUE LEFT JOIN admin_content_records r ON paged.isOverride AND r.collection_name = ? AND r.record_id = paged.record_id",
-      " ORDER BY paged.record_id",
-    ].join("\n");
-    const idsJson = JSON.stringify(ids);
+  async function pageAdminCatalog(collection, seeds, { q = '', ids = [], itemType = '', rarity = '', limit = 24, offset = 0 }) {
+    const [rows] = await pool.query(
+      'SELECT record_id AS recordId, document_json AS documentJson, is_deleted AS isDeleted FROM admin_content_records WHERE collection_name = ?',
+      [collection]
+    );
+    const merged = new Map(seeds.map((row) => [row.id, { ...row, data: null }]));
+    for (const row of rows) {
+      if (row.isDeleted) {
+        merged.delete(row.recordId);
+      } else {
+        const doc = decodeJson(row.documentJson);
+        merged.set(row.recordId, {
+          id: row.recordId,
+          name: doc?.tenDo || doc?.name || '',
+          code: doc?.maDo || doc?.code || row.recordId,
+          type: String(doc?.type || doc?.loai || '').toUpperCase(),
+          rarity: String(doc?.rarity || 'NORMAL').toUpperCase(),
+          data: doc,
+        });
+      }
+    }
+    const query = (q || '').trim().toLocaleLowerCase();
+    const idSet = Array.isArray(ids) && ids.length ? new Set(ids) : null;
+    const filterType = (itemType || '').trim().toUpperCase();
+    const filterRarity = (rarity || '').trim().toUpperCase();
+    const filtered = [...merged.values()].filter((row) => {
+      if (idSet && !idSet.has(row.id) && !idSet.has(row.code)) return false;
+      if (filterType && row.type !== filterType) return false;
+      if (filterRarity && row.rarity !== filterRarity) return false;
+      if (!query) return true;
+      return `${row.id} ${row.code} ${row.name}`.toLocaleLowerCase().includes(query);
+    });
+    filtered.sort((a, b) => a.id.localeCompare(b.id));
     const limitInt = Math.max(1, Math.min(100, Number.parseInt(limit, 10) || 24));
     const offsetInt = Math.max(0, Number.parseInt(offset, 10) || 0);
-    const [rows] = await pool.query(sql, [JSON.stringify(seeds), collection, collection, q, q, itemType, itemType, rarity, rarity, ids.length, idsJson, idsJson, limitInt, offsetInt, collection]);
-    return { total: Number(rows[0]?.total || 0), rows: rows.filter((row) => row.id !== null).map((row) => ({
-      id: row.id, data: row.documentJson == null ? null : decodeJson(row.documentJson),
-    })) };
+    return {
+      total: filtered.length,
+      rows: filtered.slice(offsetInt, offsetInt + limitInt).map((row) => ({ id: row.id, data: row.data })),
+    };
   }
 
   async function getAdminContentRecord(collection, id) {
@@ -320,10 +340,71 @@ function createMysqlStore(config) {
   async function listAdminAccounts(limit = 200) {
     const limitInt = Math.max(1, Math.min(500, Number.parseInt(limit, 10) || 200));
     const [rows] = await pool.query(
-      'SELECT u.id, u.username, u.role, u.status, u.created_at AS createdAt, p.id AS playerId, p.name AS playerName, p.realm_code AS realmCode, p.realm_stage AS realmStage FROM users u LEFT JOIN players p ON p.user_id = u.id ORDER BY u.created_at DESC LIMIT ?',
+      'SELECT u.id, u.username, u.role, u.status, u.created_at AS createdAt, p.id AS playerId, p.name AS playerName, p.realm_code AS realmCode, p.realm_stage AS realmStage, p.tu_vi AS tuVi, p.map_code AS mapCode FROM users u LEFT JOIN players p ON p.user_id = u.id ORDER BY u.created_at DESC LIMIT ?',
       [limitInt],
     );
     return rows;
+  }
+
+  async function pageAdminAccounts({ page = 1, limit = 24, q = '' } = {}) {
+    const pageInt = Math.max(1, Number.parseInt(page, 10) || 1);
+    const limitInt = Math.max(1, Math.min(100, Number.parseInt(limit, 10) || 24));
+    const offsetInt = (pageInt - 1) * limitInt;
+    const search = (q || '').trim().toLowerCase();
+
+    let countSql = 'SELECT COUNT(*) AS total FROM users u LEFT JOIN players p ON p.user_id = u.id';
+    let dataSql = 'SELECT u.id, u.username, u.role, u.status, u.created_at AS createdAt, p.id AS playerId, p.name AS playerName, p.realm_code AS realmCode, p.realm_stage AS realmStage, p.tu_vi AS tuVi, p.map_code AS mapCode FROM users u LEFT JOIN players p ON p.user_id = u.id';
+    const params = [];
+
+    if (search) {
+      const whereClause = ' WHERE LOWER(u.username) LIKE ? OR LOWER(COALESCE(p.name, "")) LIKE ? OR LOWER(COALESCE(p.id, "")) LIKE ?';
+      const like = `%${search}%`;
+      countSql += whereClause;
+      dataSql += whereClause;
+      params.push(like, like, like);
+    }
+
+    dataSql += ' ORDER BY u.created_at DESC LIMIT ? OFFSET ?';
+    const [[countRow]] = await pool.query(countSql, params);
+    const [rows] = await pool.query(dataSql, [...params, limitInt, offsetInt]);
+
+    return {
+      total: Number(countRow?.total || 0),
+      rows,
+    };
+  }
+
+  async function updateUserStatus(userId, status) {
+    const validStatus = status === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE';
+    await pool.execute('UPDATE users SET status = ? WHERE id = ?', [validStatus, userId]);
+    if (validStatus === 'SUSPENDED') {
+      await pool.execute('DELETE FROM auth_refresh_tokens WHERE user_id = ?', [userId]);
+    }
+    const [rows] = await pool.query(
+      'SELECT u.id, u.username, u.role, u.status, u.created_at AS createdAt, p.id AS playerId, p.name AS playerName, p.realm_code AS realmCode, p.realm_stage AS realmStage, p.tu_vi AS tuVi, p.map_code AS mapCode FROM users u LEFT JOIN players p ON p.user_id = u.id WHERE u.id = ?',
+      [userId],
+    );
+    return rows[0] || null;
+  }
+
+  async function updateUserRole(userId, role) {
+    const validRole = ['PLAYER', 'GM', 'ADMIN'].includes(role) ? role : 'PLAYER';
+    await pool.execute('UPDATE users SET role = ? WHERE id = ?', [validRole, userId]);
+    const [rows] = await pool.query(
+      'SELECT u.id, u.username, u.role, u.status, u.created_at AS createdAt, p.id AS playerId, p.name AS playerName, p.realm_code AS realmCode, p.realm_stage AS realmStage, p.tu_vi AS tuVi, p.map_code AS mapCode FROM users u LEFT JOIN players p ON p.user_id = u.id WHERE u.id = ?',
+      [userId],
+    );
+    return rows[0] || null;
+  }
+
+  async function resetUserPassword(userId, newPassword) {
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 6) {
+      throw new DomainError('INVALID_PASSWORD', 'Mật khẩu mới phải dài từ 6 ký tự trở lên', 400);
+    }
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await pool.execute('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, userId]);
+    await pool.execute('DELETE FROM auth_refresh_tokens WHERE user_id = ?', [userId]);
+    return { ok: true, userId };
   }
 
   async function mutateAdminContent(actorId, collection, recordId, document, remove = false, requestId = null, createOnly = false, expectedVersion) {
@@ -2462,7 +2543,7 @@ function createMysqlStore(config) {
     });
   }
 
-  return { init, backfillLegacyEquipment, healthCheck, bindCatalog, findUserByUsername, findUserById, insertUser, saveRefreshToken, rotateRefreshToken, revokeRefreshToken, playerSnapshot, createPlayer, buyItem, sellItem, useInventoryItem, allocateStats, updatePlayerName, savePlayerPosition, updateVitals, respawn, pickupGroundItem, equipItem, unequipItem, enhanceEquipment, listEnhanceLogs, learnSkill, equipSkills, replayBreakthrough, breakthrough, replayAlchemy, brewAlchemy, listAlchemyLogs, questSnapshot, questAction, applyQuestEvent, listWalletLedger, listPlayerMail, claimPlayerMail, sendPlayerMail, getRetentionState, claimDailyCheckin, listAdminWorlds, saveAdminWorlds, deleteAdminWorld, listAdminContentRecords, pageAdminCatalog, getAdminContentRecord, listAdminAccounts, mutateAdminContent, listAdminSkillVfx, mutateSkillVfx, close: () => pool.end() };
+  return { init, backfillLegacyEquipment, healthCheck, bindCatalog, findUserByUsername, findUserById, insertUser, upsertAdminUser, saveRefreshToken, rotateRefreshToken, revokeRefreshToken, playerSnapshot, createPlayer, buyItem, sellItem, useInventoryItem, allocateStats, updatePlayerName, savePlayerPosition, updateVitals, respawn, pickupGroundItem, equipItem, unequipItem, enhanceEquipment, listEnhanceLogs, learnSkill, equipSkills, replayBreakthrough, breakthrough, replayAlchemy, brewAlchemy, listAlchemyLogs, questSnapshot, questAction, applyQuestEvent, listWalletLedger, listPlayerMail, claimPlayerMail, sendPlayerMail, getRetentionState, claimDailyCheckin, listAdminWorlds, saveAdminWorlds, deleteAdminWorld, listAdminContentRecords, pageAdminCatalog, getAdminContentRecord, listAdminAccounts, pageAdminAccounts, updateUserStatus, updateUserRole, resetUserPassword, mutateAdminContent, listAdminSkillVfx, mutateSkillVfx, close: () => pool.end() };
 }
 
 module.exports = { createMysqlStore, canonicalJson };

@@ -222,3 +222,188 @@ test('validateWorld checks npc.shopCategory only allows ALL, EQUIPMENT, ALCHEMY 
   assert.equal(invalidResult.valid, false);
   assert.ok(invalidResult.errors.length > 0);
 });
+
+test('admin store and router account moderation supports status, role, resetPassword and blocks self-lockout', async () => {
+  const { createAdminRouter } = require('../src/http/admin-routes');
+  const express = require('express');
+
+  const users = new Map([
+    ['usr_admin', { id: 'usr_admin', username: 'admin', role: 'ADMIN', status: 'ACTIVE' }],
+    ['usr_player1', { id: 'usr_player1', username: 'tiendao', role: 'PLAYER', status: 'ACTIVE' }],
+  ]);
+  const mockTokens = new Set(['token_p1_abc']);
+
+  const mockStore = {
+    async updateUserStatus(userId, status) {
+      const u = users.get(userId);
+      if (!u) return null;
+      u.status = status;
+      if (status === 'SUSPENDED') mockTokens.clear();
+      return { ...u };
+    },
+    async updateUserRole(userId, role) {
+      const u = users.get(userId);
+      if (!u) return null;
+      u.role = role;
+      return { ...u };
+    },
+    async resetUserPassword(userId, newPassword) {
+      const u = users.get(userId);
+      if (!u) return null;
+      if (!newPassword || newPassword.length < 6) throw new Error('Mật khẩu ngắn');
+      mockTokens.clear();
+      return { ok: true, userId };
+    },
+    async getAdminContentRecord() { return null; },
+    async mutateAdminContent() { return { data: {}, version: 1 }; },
+  };
+
+  const fakeAuth = {
+    async authenticateToken(_token) {
+      return { sub: 'usr_admin', username: 'admin', role: 'ADMIN' };
+    },
+  };
+
+  const app = express();
+  app.use(express.json());
+  app.use('/admin', createAdminRouter({
+    auth: fakeAuth,
+    adminWorlds: { list: () => [] },
+    adminContent: { list: () => ({ data: [] }) },
+    skillVfx: { list: () => [] },
+    store: mockStore,
+  }));
+
+  const server = await new Promise((resolve) => {
+    const s = app.listen(0, () => resolve(s));
+  });
+  const port = server.address().port;
+  const base = `http://127.0.0.1:${port}`;
+  const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer mock_admin_token' };
+
+  try {
+    // 1. Role update
+    const r1 = await fetch(`${base}/admin/accounts/usr_player1/role`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ role: 'GM' }),
+    });
+    const b1 = await r1.json();
+    assert.equal(r1.status, 200);
+    assert.equal(b1.user.role, 'GM');
+
+    // 2. Self demote protection
+    const r2 = await fetch(`${base}/admin/accounts/usr_admin/role`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ role: 'PLAYER' }),
+    });
+    assert.equal(r2.status, 400);
+
+    // 3. Suspend user
+    const r3 = await fetch(`${base}/admin/accounts/usr_player1/status`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ status: 'SUSPENDED' }),
+    });
+    const b3 = await r3.json();
+    assert.equal(r3.status, 200);
+    assert.equal(b3.user.status, 'SUSPENDED');
+    assert.equal(mockTokens.size, 0);
+
+    // 4. Self suspend protection
+    const r4 = await fetch(`${base}/admin/accounts/usr_admin/status`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ status: 'SUSPENDED' }),
+    });
+    assert.equal(r4.status, 400);
+
+    // 5. Reset password
+    const r5 = await fetch(`${base}/admin/accounts/usr_player1/reset-password`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ newPassword: 'secretpassword123' }),
+    });
+    const b5 = await r5.json();
+    assert.equal(r5.status, 200);
+    assert.equal(b5.result.ok, true);
+  } finally {
+    server.close();
+  }
+});
+
+test('admin server-config GET and PUT handles maintenance mode and operational multipliers', async () => {
+  const { createAdminRouter } = require('../src/http/admin-routes');
+  const express = require('express');
+
+  let currentConfig = null;
+  const mockStore = {
+    async getAdminContentRecord(collection, id) {
+      if (collection === 'server_config' && id === 'current') {
+        return currentConfig ? { data: currentConfig, version: 1 } : null;
+      }
+      return null;
+    },
+    async mutateAdminContent(actorId, collection, id, data) {
+      if (collection === 'server_config' && id === 'current') {
+        currentConfig = data;
+        return { data, version: 2 };
+      }
+      return { data, version: 1 };
+    },
+  };
+
+  const fakeAuth = {
+    async authenticateToken(_token) {
+      return { sub: 'usr_admin', username: 'admin', role: 'ADMIN' };
+    },
+  };
+
+  const app = express();
+  app.use(express.json());
+  app.use('/admin', createAdminRouter({
+    auth: fakeAuth,
+    adminWorlds: { list: () => [] },
+    adminContent: { list: () => ({ data: [] }) },
+    skillVfx: { list: () => [] },
+    store: mockStore,
+  }));
+
+  const server = await new Promise((resolve) => {
+    const s = app.listen(0, () => resolve(s));
+  });
+  const port = server.address().port;
+  const base = `http://127.0.0.1:${port}`;
+  const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer mock_admin_token' };
+
+  try {
+    const r1 = await fetch(`${base}/admin/server-config`, { headers });
+    const b1 = await r1.json();
+    assert.equal(r1.status, 200);
+    assert.equal(b1.data.dropRateMultiplier, 1.0);
+    assert.equal(b1.data.maintenanceMode, false);
+
+    const r2 = await fetch(`${base}/admin/server-config`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        maintenanceMode: true,
+        maintenanceMessage: 'Đang bảo trì nâng cấp cụm máy chủ',
+        dropRateMultiplier: 2.0,
+        expMultiplier: 1.5,
+        goldMultiplier: 1.2,
+        announcement: 'Chào mừng Đại Lễ!',
+      }),
+    });
+    const b2 = await r2.json();
+    assert.equal(r2.status, 200);
+    assert.equal(b2.data.maintenanceMode, true);
+    assert.equal(b2.data.dropRateMultiplier, 2.0);
+    assert.equal(b2.data.expMultiplier, 1.5);
+    assert.equal(b2.data.goldMultiplier, 1.2);
+    assert.equal(b2.data.announcement, 'Chào mừng Đại Lễ!');
+  } finally {
+    server.close();
+  }
+});

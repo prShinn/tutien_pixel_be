@@ -466,6 +466,18 @@ function createAdminContentService({ store, catalog, world, quests, onCatalogCha
     if (collection === 'lootTables') {
       for (const monster of catalog.listMonsters?.() || []) if (matches(monster.lootTableId)) refs.push(`quái ${monster.id || monster.code}`);
     }
+    if (collection === 'monsters') {
+      for (const w of world.listAdminWorlds?.() || []) {
+        for (const spawn of w.monsterSpawns || []) {
+          if (matches(spawn.templateId) || matches(spawn.monsterType)) refs.push(`map ${w.code || w.tenMap || w.id}`);
+        }
+      }
+      for (const quest of quests.list?.() || []) {
+        if (matches(quest.targetMonsterId) || matches(quest.targetCode) || (quest.eventType === 'monster_kill' && matches(quest.targetId))) {
+          refs.push(`nhiệm vụ ${quest.id}`);
+        }
+      }
+    }
     if (collection === 'items') {
       for (const table of catalog.listLootTables?.() || []) {
         if ((table.entries || []).some((entry) => matches(entry.itemId) || matches(entry.itemCode))) refs.push(`bảng rớt ${table.id}`);
@@ -514,7 +526,16 @@ function createAdminContentService({ store, catalog, world, quests, onCatalogCha
 
   async function list(collection, query = {}) {
     if (!EDITABLE.has(collection) && !READ_ONLY.has(collection)) throw new DomainError('INVALID_CONTENT_COLLECTION', 'Nhóm nội dung không hợp lệ', 404);
-    if (collection === 'accounts') return { collection, demo: false, persisted: true, data: await store.listAdminAccounts() };
+    if (collection === 'accounts') {
+      if (typeof store.pageAdminAccounts === 'function' && (query.page !== undefined || query.limit !== undefined || query.q !== undefined)) {
+        const page = Math.max(1, Number.parseInt(query.page, 10) || 1);
+        const limit = Math.max(1, Math.min(100, Number.parseInt(query.limit, 10) || 24));
+        const q = String(query.q || '').trim();
+        const { total, rows } = await store.pageAdminAccounts({ page, limit, q });
+        return { collection, demo: false, persisted: true, data: rows, pagination: { page, limit, total } };
+      }
+      return { collection, demo: false, persisted: true, data: await store.listAdminAccounts() };
+    }
     if (isPaged(collection) && ["page", "limit", "q", "ids", "itemType", "rarity"].some((key) => query[key] !== undefined)) {
       const page = Number(query.page ?? 1);
       const limit = Number(query.limit ?? 24);
@@ -545,6 +566,22 @@ function createAdminContentService({ store, catalog, world, quests, onCatalogCha
     for (const override of await store.listAdminContentRecords(collection)) {
       if (override.deleted) merged.delete(override.id);
       else merged.set(override.id, override.data);
+    }
+    if (["page", "limit", "q"].some((key) => query[key] !== undefined)) {
+      const page = Math.max(1, Number.parseInt(query.page, 10) || 1);
+      const limit = Math.max(1, Math.min(100, Number.parseInt(query.limit, 10) || 24));
+      const q = String(query.q || '').trim().toLowerCase();
+      let all = [...merged.values()];
+      if (q) {
+        all = all.filter((entry) => {
+          const id = recordId(collection, entry);
+          const name = entry.name || entry.title || entry.tenDo || id;
+          return `${id} ${name}`.toLowerCase().includes(q);
+        });
+      }
+      const total = all.length;
+      const paged = all.slice((page - 1) * limit, (page - 1) * limit + limit);
+      return { collection, demo: false, persisted: true, data: paged, pagination: { page, limit, total } };
     }
     return { collection, demo: false, persisted: true, data: [...merged.values()] };
   }
@@ -595,7 +632,7 @@ function createAdminContentService({ store, catalog, world, quests, onCatalogCha
   }
 
   async function remove(collection, id, actorId, requestId) {
-    if (!EDITABLE.has(collection) || collection === 'quests' || collection === 'monsters') throw new DomainError('CONTENT_READ_ONLY', 'Quest và quái được giữ để bảo vệ tiến độ và cấu hình map', 403);
+    if (!EDITABLE.has(collection) || collection === 'quests') throw new DomainError('CONTENT_READ_ONLY', 'Quest được giữ để bảo vệ tiến độ của người chơi', 403);
     const found = await findRecord(collection, id);
     if (!found) throw new DomainError('CONTENT_NOT_FOUND', 'Bản ghi nội dung không tồn tại', 404);
     const usedBy = contentReferences(collection, id);

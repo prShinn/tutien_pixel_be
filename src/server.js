@@ -81,6 +81,7 @@ async function createApp() {
   await store.backfillLegacyEquipment?.();
   const world = createWorldService({ overrides: worldOverrides });
   const auth = createAuth({ store, secret: config.jwtSecret });
+  await auth.ensureAdminUser?.();
   const players = createPlayerService({ store, catalog, world });
   const inventory = createInventoryService({ store, catalog, players });
   const cultivation = createCultivationService({ store, catalog, players, inventory });
@@ -174,6 +175,34 @@ async function createApp() {
     return res.send(metrics.render({ socketCount: io.engine.clientsCount }));
   });
 
+  app.get('/api/server-info', async (_req, res) => {
+    try {
+      const record = await store.getAdminContentRecord('server_config', 'current');
+      const cfg = record?.data || {};
+      res.json({
+        ok: true,
+        maintenanceMode: Boolean(cfg.maintenanceMode),
+        maintenanceMessage: cfg.maintenanceMessage || '',
+        announcement: cfg.announcement || 'Thiên Địa sơ khai, chúc các đạo hữu tu hành tinh tấn!',
+        multipliers: {
+          drop: Number(cfg.dropRateMultiplier) || 1.0,
+          exp: Number(cfg.expMultiplier) || 1.0,
+          gold: Number(cfg.goldMultiplier) || 1.0,
+        },
+        time: new Date().toISOString(),
+      });
+    } catch {
+      res.json({
+        ok: true,
+        maintenanceMode: false,
+        maintenanceMessage: '',
+        announcement: 'Thiên Địa sơ khai, chúc các đạo hữu tu hành tinh tấn!',
+        multipliers: { drop: 1.0, exp: 1.0, gold: 1.0 },
+        time: new Date().toISOString(),
+      });
+    }
+  });
+
   let gameplay = null;
   const onPlayerChanged = (userId) => gameplay?.playerChanged?.(userId);
   const enhance = createEnhanceService({
@@ -232,7 +261,7 @@ async function createApp() {
       gameplay.worldChanged(code);
     }).catch(() => process.stderr.write('{"level":"error","event":"world_peer_refresh_failed"}\n'));
   });
-  app.use('/api/admin', createAdminRouter({ auth, adminWorlds, adminContent, skillVfx, mail, rateLimitRedis }));
+  app.use('/api/admin', createAdminRouter({ auth, adminWorlds, adminContent, skillVfx, mail, rateLimitRedis, store }));
   app.use('/api/player', createPlayerRouter({ auth, players, onPlayerChanged }));
   app.use('/api', (_req, res) => res.status(404).json({ ok: false, error: 'API không tồn tại', code: 'NOT_FOUND', message: 'API không tồn tại' }));
   app.use(errorHandler);

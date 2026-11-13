@@ -21,12 +21,12 @@ function createStore() {
   };
 }
 
-function setup({ questDefinitions = [] } = {}) {
+function setup({ questDefinitions = [], worldDefinitions = [] } = {}) {
   const catalog = createCatalogService();
   const adminContent = createAdminContentService({
     store: createStore(),
     catalog,
-    world: { listAdminWorlds: () => [], listSummaries: () => [] },
+    world: { listAdminWorlds: () => worldDefinitions, listSummaries: () => [] },
     quests: { applyOverrides() {}, list: () => questDefinitions },
   });
   return { catalog, adminContent };
@@ -139,4 +139,37 @@ test('an item referenced by a loot table, recipe or quest cannot be deleted unti
 test('new skill codes must be ASCII even though one legacy seeded code contains accents', async () => {
   const { adminContent } = setup();
   await assert.rejects(adminContent.create('skills', { ...baseSkill, code: 'KỸ_NĂNG_MỚI' }, 1, nextRequest()), { code: 'INVALID_SKILL' });
+});
+
+test('a monster referenced by a map spawn or quest cannot be deleted, but an unused monster can be deleted', async () => {
+  const { adminContent } = setup({
+    worldDefinitions: [
+      { code: 'map_rung', tenMap: 'Rừng Rậm', monsterSpawns: [{ templateId: 'REF_MONSTER_MAP' }] },
+    ],
+    questDefinitions: [
+      { id: 'quest_diet_quai', targetMonsterId: 'REF_MONSTER_QUEST' },
+    ],
+  });
+
+  const makeMonster = (id) => adminContent.create('monsters', {
+    id, code: id, name: id, type: 'NORMAL', linhCan: 'KIM', level: 1, hp: 100, atk: 10, def: 5, speed: 1.2, respawnMs: 15000,
+    img: './assets/monsters/test_monster.png',
+  }, 1, nextRequest());
+
+  await makeMonster('REF_MONSTER_MAP');
+  await makeMonster('REF_MONSTER_QUEST');
+  await makeMonster('REF_MONSTER_UNUSED');
+
+  await assert.rejects(
+    adminContent.remove('monsters', 'REF_MONSTER_MAP', 1, nextRequest()),
+    (error) => error.code === 'CONTENT_IN_USE' && error.details.usedBy.includes('map map_rung'),
+  );
+
+  await assert.rejects(
+    adminContent.remove('monsters', 'REF_MONSTER_QUEST', 1, nextRequest()),
+    (error) => error.code === 'CONTENT_IN_USE' && error.details.usedBy.includes('nhiệm vụ quest_diet_quai'),
+  );
+
+  const removed = await adminContent.remove('monsters', 'REF_MONSTER_UNUSED', 1, nextRequest());
+  assert.equal(removed.removed, 'REF_MONSTER_UNUSED');
 });
